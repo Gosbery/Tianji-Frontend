@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiErrorMessage, calculateChart, sendFeedback } from "@/lib/api";
+import { apiErrorMessage, askQuestion, calculateChart, sendFeedback } from "@/lib/api";
 
 const birth = {
   date: "1990-01-01",
@@ -30,6 +30,56 @@ describe("apiErrorMessage", () => {
 });
 
 describe("request behavior", () => {
+  it("consumes SSE chunks and returns the terminal chat response", async () => {
+    const response = {
+      session_id: "session-1",
+      message_id: "message-1",
+      answer: "流式回答",
+      evidence: [],
+      uncertainties: [],
+      followups: [],
+      mode: "hybrid_rerank",
+      latency_ms: 10,
+      token_usage: null,
+    };
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: start\ndata: {"type":"start"}\n\n'));
+        controller.enqueue(encoder.encode(
+          'event: progress\ndata: {"type":"progress","message":"正在检索相关资料"}\n\n',
+        ));
+        controller.enqueue(encoder.encode('event: chunk\ndata: {"type":"chunk","content":"流式"}\n\n'));
+        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ type: "done", response })}\n\n`));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const chunks: string[] = [];
+    const progress: string[] = [];
+
+    await expect(askQuestion({
+      chart: {} as never,
+      question: "测试问题",
+      mode: "hybrid_rerank",
+      evidenceScope: "reviewed_only",
+      school: "基础共识",
+      onChunk: (chunk) => chunks.push(chunk),
+      onProgress: (message) => progress.push(message),
+    })).resolves.toEqual(response);
+
+    expect(chunks).toEqual(["流式"]);
+    expect(progress).toEqual(["正在检索相关资料"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/chat/stream",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("keeps AbortError distinct from network failures", async () => {
     const abortError = new Error("aborted");
     abortError.name = "AbortError";

@@ -48,6 +48,29 @@ function workspaceProps() {
 }
 
 describe("ChatWorkspace", () => {
+  it("shows streamed analysis progress in the assistant message", async () => {
+    const streamedResponse = response("session", "message", "最终回答");
+    const onAsk = vi.fn().mockImplementation(async (
+      _question: string,
+      onChunk?: (content: string) => void,
+      onProgress?: (message: string) => void,
+    ) => {
+      onProgress?.("正在检索相关资料");
+      onProgress?.("已检索到 6 条相关依据，正在组织分析");
+      onChunk?.("最终回答");
+      return streamedResponse;
+    });
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.change(textbox, { target: { value: "测试分析进度" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    expect(await screen.findByText("正在检索相关资料")).toBeDefined();
+    expect(screen.getByText("已检索到 6 条相关依据，正在组织分析")).toBeDefined();
+    expect(await screen.findByText("最终回答")).toBeDefined();
+  });
+
   it("does not overwrite a draft when a pillar suggestion changes", () => {
     const props = workspaceProps();
     const { rerender } = render(<ChatWorkspace {...props} />);

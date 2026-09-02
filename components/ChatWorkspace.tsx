@@ -28,6 +28,8 @@ type Message = {
   id: string;
   role: "assistant" | "user";
   content: string;
+  progress?: string[];
+  streaming?: boolean;
   response?: ChatResponse;
   feedbackRating?: -1 | 1;
   feedbackPending?: boolean;
@@ -44,7 +46,11 @@ type Props = {
   evidenceScope: EvidenceScope;
   suggestedQuestion: string;
   loading: boolean;
-  onAsk: (question: string) => Promise<ChatResponse>;
+  onAsk: (
+    question: string,
+    onChunk?: (content: string) => void,
+    onProgress?: (message: string) => void,
+  ) => Promise<ChatResponse>;
   onFeedback: (
     sessionId: string,
     messageId: string,
@@ -64,22 +70,28 @@ function InlineText({ parts }: { parts: InlinePart[] }) {
   );
 }
 
-export function FormattedAnswer({ text }: { text: string }) {
+export function FormattedAnswer({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const blocks = parseAnswer(text);
   return (
     <div className="answer-text">
       {blocks.map((block, index) => {
         const key = `${block.type}-${index}`;
+        const cursor = streaming && index === blocks.length - 1
+          ? <span className="stream-cursor" aria-hidden="true" />
+          : null;
         if (block.type === "heading") {
-          return <h3 key={key}><InlineText parts={block.content} /></h3>;
+          return <h3 key={key}><InlineText parts={block.content} />{cursor}</h3>;
         }
         if (block.type === "list") {
           const items = block.items.map((item, itemIndex) => (
-            <li key={`${key}-${itemIndex}`}><InlineText parts={item} /></li>
+            <li key={`${key}-${itemIndex}`}>
+              <InlineText parts={item} />
+              {itemIndex === block.items.length - 1 ? cursor : null}
+            </li>
           ));
           return block.ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>;
         }
-        return <p key={key}><InlineText parts={block.content} /></p>;
+        return <p key={key}><InlineText parts={block.content} />{cursor}</p>;
       })}
     </div>
   );
@@ -106,11 +118,12 @@ export function ChatWorkspace({
   const messageSequence = useRef(0);
   const feedbackInFlight = useRef(new Set<string>());
   const messageCount = messages.length;
+  const latestContentLength = messages.at(-1)?.content.length ?? 0;
 
   useEffect(() => {
     const scrollArea = chatScrollRef.current;
     if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
-  }, [messageCount, loading]);
+  }, [messageCount, latestContentLength, loading]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -140,20 +153,76 @@ export function ChatWorkspace({
       ...current,
       { id: userMessageId, role: "user", content: value },
     ]);
+    let streamingAssistantId: string | null = null;
+    const onProgress = (progress: string) => {
+      if (!progress) return;
+      if (!streamingAssistantId) {
+        streamingAssistantId = nextMessageId("assistant");
+        setMessages((current) => [
+          ...current,
+          {
+            id: streamingAssistantId!,
+            role: "assistant",
+            content: "",
+            progress: [progress],
+            streaming: true,
+          },
+        ]);
+        return;
+      }
+      setMessages((current) => current.map((message) => {
+        if (message.id !== streamingAssistantId) return message;
+        if (message.progress?.at(-1) === progress) return message;
+        return { ...message, progress: [...(message.progress ?? []), progress] };
+      }));
+    };
+    const onChunk = (chunk: string) => {
+      if (!chunk) return;
+      if (!streamingAssistantId) {
+        streamingAssistantId = nextMessageId("assistant");
+        setMessages((current) => [
+          ...current,
+          { id: streamingAssistantId!, role: "assistant", content: chunk, streaming: true },
+        ]);
+        return;
+      }
+      setMessages((current) => current.map((message) => message.id === streamingAssistantId
+        ? { ...message, content: message.content + chunk }
+        : message));
+    };
     try {
-      const response = await onAsk(value);
-      setMessages((current) => [
-        ...current,
-        {
-          id: nextMessageId("assistant"),
-          role: "assistant",
-          content: response.answer,
-          response,
-        },
-      ]);
+      const response = await onAsk(value, onChunk, onProgress);
+      setMessages((current) => {
+        if (streamingAssistantId) {
+          return current.map((message) => message.id === streamingAssistantId
+            ? { ...message, content: response.answer, response, streaming: false }
+            : message);
+        }
+        return [
+          ...current,
+          {
+            id: nextMessageId("assistant"),
+            role: "assistant",
+            content: response.answer,
+            response,
+          },
+        ];
+      });
     } catch (reason) {
       if (isAbortError(reason)) {
-        setMessages((current) => current.filter((message) => message.id !== userMessageId));
+        setMessages((current) => current.filter((message) =>
+          message.id !== userMessageId && message.id !== streamingAssistantId
+        ));
+        return;
+      }
+      if (streamingAssistantId) {
+        setMessages((current) => current.map((message) => message.id === streamingAssistantId
+          ? {
+              ...message,
+              content: message.content || (reason instanceof Error ? reason.message : "请求失败"),
+              streaming: false,
+            }
+          : message));
         return;
       }
       setMessages((current) => [
@@ -213,7 +282,31 @@ export function ChatWorkspace({
             </div>
             <div className="message-content">
               <span className="message-author">{message.role === "assistant" ? "研究助手" : "你"}</span>
-              <FormattedAnswer text={message.content} />
+              {message.progress && message.progress.length > 0 && (
+                <div
+                  className={`reasoning-progress ${message.streaming ? "streaming" : "complete"}`}
+                  aria-label="分析进度"
+                >
+                  {message.progress.map((progress, index) => (
+                    <span
+                      key={`${message.id}-progress-${index}`}
+                      className={message.streaming && index === message.progress!.length - 1
+                        ? "active"
+                        : ""}
+                    >
+                      {progress}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {message.streaming && !message.content && (
+                <div className="thought-wave" aria-hidden="true">
+                  <i /><i /><i /><i /><i />
+                </div>
+              )}
+              {message.content && (
+                <FormattedAnswer text={message.content} streaming={message.streaming} />
+              )}
               {message.response && (
                 <>
                   <div className="message-actions">
@@ -292,7 +385,7 @@ export function ChatWorkspace({
             </div>
           </article>
         ))}
-        {loading && (
+        {loading && !messages.some((message) => message.streaming) && (
           <article className="message assistant" role="status" aria-label="研究助手正在生成回答">
             <div className="message-avatar" aria-hidden="true"><Bot size={17} /></div>
             <div className="thinking" aria-hidden="true"><i /><i /><i /></div>

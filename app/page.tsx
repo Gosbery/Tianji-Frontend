@@ -133,7 +133,11 @@ export default function Home() {
     setLatest(null);
   }
 
-  async function handleAsk(question: string) {
+  async function handleAsk(
+    question: string,
+    onChunk?: (content: string) => void,
+    onProgress?: (message: string) => void,
+  ) {
     if (!chart) throw new Error("请先完成排盘");
     chatAbortRef.current?.abort();
     const controller = new AbortController();
@@ -148,6 +152,8 @@ export default function Home() {
         mode,
         evidenceScope,
         school,
+        onChunk,
+        onProgress,
       }, controller.signal);
       if (chatAbortRef.current !== controller) throw supersededRequestError();
       setLatest(response);
