@@ -26,6 +26,48 @@ export type ChartFacts = {
   day_master: string;
   day_master_element: string;
   day_master_yin_yang: string;
+  month_command: {
+    branch: string;
+    main_hidden_stem: string;
+    ten_god: string;
+  };
+  exposed_stems: Array<{
+    hidden_stem: string;
+    hidden_positions: string[];
+    visible_positions: string[];
+    outside_day_master: boolean;
+  }>;
+  roots: Array<{
+    stem: string;
+    stem_position: string;
+    branch: string;
+    branch_position: string;
+    hidden_stem: string;
+    relation: "same_stem" | "same_element";
+  }>;
+  structural_relations: Array<{
+    kind:
+      | "stem_combination"
+      | "branch_combination"
+      | "branch_clash"
+      | "branch_harm"
+      | "branch_punishment"
+      | "three_harmony"
+      | "seasonal_meeting";
+    label: string;
+    members: string[];
+    positions: string[];
+    completeness: "pair" | "partial" | "full";
+    note: string;
+  }>;
+  pattern_candidates: Array<{
+    name: string;
+    ten_god: string;
+    source_stem: string;
+    basis: "month_main_qi" | "month_hidden_stem_exposed";
+    exposed_positions: string[];
+    note: string;
+  }>;
   calculation_basis: string;
   uncertainties: string[];
 };

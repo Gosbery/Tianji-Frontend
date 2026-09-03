@@ -15,6 +15,11 @@ const chart: ChartFacts = {
   day_master: "庚",
   day_master_element: "金",
   day_master_yin_yang: "阳",
+  month_command: { branch: "子", main_hidden_stem: "癸", ten_god: "伤官" },
+  exposed_stems: [],
+  roots: [],
+  structural_relations: [],
+  pattern_candidates: [],
   calculation_basis: "test",
   uncertainties: [],
 };

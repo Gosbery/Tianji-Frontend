@@ -47,6 +47,11 @@ function chart(dayMaster: string, date = "1990-01-01"): ChartFacts {
     day_master: dayMaster,
     day_master_element: dayMaster === "甲" ? "木" : "金",
     day_master_yin_yang: "阳",
+    month_command: { branch: "子", main_hidden_stem: "癸", ten_god: "正官" },
+    exposed_stems: [],
+    roots: [],
+    structural_relations: [],
+    pattern_candidates: [],
     calculation_basis: "test",
     uncertainties: [],
   };
