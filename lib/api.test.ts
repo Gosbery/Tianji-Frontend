@@ -4,6 +4,7 @@ import { apiErrorMessage, askQuestion, calculateChart, sendFeedback } from "@/li
 const birth = {
   date: "1990-01-01",
   time: "12:00",
+  gender: "male" as const,
   timezone: "Asia/Shanghai",
   name: "访客",
 };
@@ -41,6 +42,9 @@ describe("request behavior", () => {
       mode: "hybrid_rerank",
       latency_ms: 10,
       token_usage: null,
+      policy_decision: "allow",
+      citations_validated: true,
+      degradation_reason: "",
     };
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
@@ -118,6 +122,30 @@ describe("request behavior", () => {
       message_id: "assistant-1",
       rating: -1,
       note: "引用不够清楚",
+    });
+  });
+
+  it("preserves the backend error code for session recovery", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: "上下文不一致",
+      code: "session_context_mismatch",
+    }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    const request = askQuestion({
+      chart: {} as never,
+      question: "继续追问",
+      sessionId: "old-session",
+      mode: "hybrid",
+      evidenceScope: "reviewed_only",
+      school: "基础共识",
+    });
+
+    await expect(request).rejects.toMatchObject({
+      status: 409,
+      code: "session_context_mismatch",
     });
   });
 });

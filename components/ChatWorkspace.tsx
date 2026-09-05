@@ -2,12 +2,16 @@
 
 import {
   ArrowUp,
+  BookOpen,
   Bot,
   CircleAlert,
   CircleUserRound,
   CornerDownRight,
   MessageCircleQuestion,
   MessageSquareText,
+  PanelsTopLeft,
+  RotateCcw,
+  Square,
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
@@ -15,12 +19,13 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { parseAnswer, type InlinePart } from "@/lib/answer-format";
 import { isAbortError } from "@/lib/api";
-import { retrievalModeDescription, SCHOOL_OPTIONS } from "@/lib/options";
+import { FORTUNE_TOPICS, retrievalModeDescription } from "@/lib/options";
 import type {
   ChartFacts,
   ChatResponse,
+  ConversationMessage,
   EvidenceScope,
-  KnowledgeSchool,
+  GenerationJob,
   RetrievalMode,
 } from "@/lib/types";
 
@@ -42,10 +47,13 @@ type Props = {
   chart: ChartFacts | null;
   blockedReason?: string;
   mode: RetrievalMode;
-  school: KnowledgeSchool;
   evidenceScope: EvidenceScope;
   suggestedQuestion: string;
   loading: boolean;
+  expertName?: string;
+  activeJob?: GenerationJob | null;
+  initialMessages?: ConversationMessage[];
+  selectedMessageId?: string;
   onAsk: (
     question: string,
     onChunk?: (content: string) => void,
@@ -57,20 +65,57 @@ type Props = {
     rating: -1 | 1,
     note: string,
   ) => Promise<void>;
-  onSchoolChange: (school: KnowledgeSchool) => void;
+  onCancel?: () => Promise<void>;
+  onRetry?: () => Promise<void>;
+  onResponseSelect: (response: ChatResponse) => void;
+  onCitation: (response: ChatResponse, citation: number) => void;
 };
 
-const INITIAL_MESSAGE = "命盘事实已就绪后，可以从日主、某一柱、十神或五行开始讨论。";
+const INITIAL_MESSAGE = "命盘事实就绪后，可以直接询问财富、婚姻、健康、事业或其他预测问题。";
 
-function InlineText({ parts }: { parts: InlinePart[] }) {
-  return parts.map((part, index) =>
-    part.bold
-      ? <strong key={`${part.text}-${index}`}>{part.text}</strong>
-      : <span key={`${part.text}-${index}`}>{part.text}</span>
+function InlineText({
+  parts,
+  onCitation,
+}: {
+  parts: InlinePart[];
+  onCitation?: (citation: number) => void;
+}) {
+  return parts.flatMap((part, partIndex) =>
+    part.text.split(/(\[\d+\])/g).filter(Boolean).map((text, textIndex) => {
+      const citation = text.match(/^\[(\d+)\]$/);
+      if (citation && onCitation) {
+        const number = Number(citation[1]);
+        return (
+          <button
+            type="button"
+            className="inline-citation"
+            title={`查看依据 ${number}`}
+            aria-label={`查看依据 ${number}`}
+            key={`${partIndex}-${textIndex}-${text}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCitation(number);
+            }}
+          >
+            {text}
+          </button>
+        );
+      }
+      const key = `${partIndex}-${textIndex}-${text}`;
+      return part.bold ? <strong key={key}>{text}</strong> : <span key={key}>{text}</span>;
+    })
   );
 }
 
-export function FormattedAnswer({ text, streaming = false }: { text: string; streaming?: boolean }) {
+export function FormattedAnswer({
+  text,
+  streaming = false,
+  onCitation,
+}: {
+  text: string;
+  streaming?: boolean;
+  onCitation?: (citation: number) => void;
+}) {
   const blocks = parseAnswer(text);
   return (
     <div className="answer-text">
@@ -80,18 +125,18 @@ export function FormattedAnswer({ text, streaming = false }: { text: string; str
           ? <span className="stream-cursor" aria-hidden="true" />
           : null;
         if (block.type === "heading") {
-          return <h3 key={key}><InlineText parts={block.content} />{cursor}</h3>;
+          return <h3 key={key}><InlineText parts={block.content} onCitation={onCitation} />{cursor}</h3>;
         }
         if (block.type === "list") {
           const items = block.items.map((item, itemIndex) => (
             <li key={`${key}-${itemIndex}`}>
-              <InlineText parts={item} />
+              <InlineText parts={item} onCitation={onCitation} />
               {itemIndex === block.items.length - 1 ? cursor : null}
             </li>
           ));
           return block.ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>;
         }
-        return <p key={key}><InlineText parts={block.content} />{cursor}</p>;
+        return <p key={key}><InlineText parts={block.content} onCitation={onCitation} />{cursor}</p>;
       })}
     </div>
   );
@@ -101,18 +146,22 @@ export function ChatWorkspace({
   chart,
   blockedReason,
   mode,
-  school,
   evidenceScope,
   suggestedQuestion,
   loading,
+  expertName,
+  activeJob,
+  initialMessages,
+  selectedMessageId,
   onAsk,
   onFeedback,
-  onSchoolChange,
+  onCancel,
+  onRetry,
+  onResponseSelect,
+  onCitation,
 }: Props) {
   const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "assistant-initial", role: "assistant", content: INITIAL_MESSAGE },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(() => restoredMessages(initialMessages ?? []));
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageSequence = useRef(0);
@@ -131,6 +180,10 @@ export function ChatWorkspace({
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
   }, [question]);
+
+  useEffect(() => {
+    if (initialMessages) setMessages(restoredMessages(initialMessages));
+  }, [initialMessages]);
 
   function nextMessageId(role: Message["role"]): string {
     messageSequence.current += 1;
@@ -276,7 +329,11 @@ export function ChatWorkspace({
         aria-busy={loading}
       >
         {messages.map((message) => (
-          <article key={message.id} className={`message ${message.role}`}>
+          <article
+            key={message.id}
+            className={`message ${message.role} ${selectedMessageId === message.response?.message_id ? "selected-response" : ""}`}
+            onClick={() => message.response && onResponseSelect(message.response)}
+          >
             <div className="message-avatar" aria-hidden="true">
               {message.role === "assistant" ? <Bot size={17} /> : <CircleUserRound size={17} />}
             </div>
@@ -305,15 +362,34 @@ export function ChatWorkspace({
                 </div>
               )}
               {message.content && (
-                <FormattedAnswer text={message.content} streaming={message.streaming} />
+                <FormattedAnswer
+                  text={message.content}
+                  streaming={message.streaming}
+                  onCitation={message.response
+                    ? (citation) => onCitation(message.response!, citation)
+                    : undefined}
+                />
               )}
               {message.response && (
                 <>
                   <div className="message-actions">
                     <span>{message.response.evidence.length} 条依据</span>
+                    {message.response.citations_validated && <span>引用已核验</span>}
                     {message.response.token_usage !== null && (
                       <span>{message.response.token_usage} tokens</span>
                     )}
+                    <button
+                      type="button"
+                      title="查看此回答的证据"
+                      aria-label="查看此回答的证据"
+                      aria-pressed={selectedMessageId === message.response.message_id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onResponseSelect(message.response!);
+                      }}
+                    >
+                      <BookOpen size={14} aria-hidden="true" />
+                    </button>
                     <button
                       type="button"
                       title="添加反馈说明"
@@ -400,6 +476,21 @@ export function ChatWorkspace({
             <span>{blockedReason}</span>
           </div>
         )}
+        {activeJob && ["queued", "running", "failed", "cancelled"].includes(activeJob.status) && (
+          <div className={`job-state ${activeJob.status}`} role="status">
+            <span>{activeJob.error || activeJob.progress || "等待生成"}</span>
+            {(activeJob.status === "queued" || activeJob.status === "running") && onCancel && (
+              <button type="button" onClick={() => void onCancel()}>
+                <Square size={12} aria-hidden="true" />取消
+              </button>
+            )}
+            {(activeJob.status === "failed" || activeJob.status === "cancelled") && onRetry && (
+              <button type="button" onClick={() => void onRetry()}>
+                <RotateCcw size={12} aria-hidden="true" />重试
+              </button>
+            )}
+          </div>
+        )}
         {suggestedQuestion && (
           <button
             type="button"
@@ -410,6 +501,28 @@ export function ChatWorkspace({
             <span>{suggestedQuestion}</span>
           </button>
         )}
+        <div className="fortune-topics" aria-label="命理主题">
+          <span className="fortune-topics-label">
+            <PanelsTopLeft size={14} aria-hidden="true" />
+            命理主题
+          </span>
+          <div className="fortune-topic-list">
+            {FORTUNE_TOPICS.map((topic) => (
+              <button
+                type="button"
+                key={topic.id}
+                disabled={!chart || loading}
+                title={topic.question}
+                onClick={() => {
+                  setQuestion(topic.question);
+                  textareaRef.current?.focus();
+                }}
+              >
+                {topic.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="sr-only" htmlFor="chat-question">问题</label>
         <textarea
           ref={textareaRef}
@@ -422,24 +535,15 @@ export function ChatWorkspace({
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={blockedReason ?? (chart ? "围绕命盘提出一个问题" : "请先完成排盘")}
+          placeholder={blockedReason ?? (chart ? "输入你想预测的问题" : "请先完成排盘")}
           aria-describedby={blockedReason ? "chat-blocked-reason" : undefined}
           disabled={!chart || loading}
           rows={2}
         />
         <div className="composer-footer">
           <div className="retrieval-settings">
-            <select
-              aria-label="知识流派"
-              value={school}
-              disabled={loading}
-              onChange={(event) => onSchoolChange(event.target.value as KnowledgeSchool)}
-            >
-              {SCHOOL_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
             <span>
+              {expertName ? `${expertName} · ` : ""}
               {retrievalModeDescription(mode)}
               {evidenceScope === "personal_preview" ? " · 含机器校勘" : " · 仅人工审核"}
             </span>
@@ -457,4 +561,16 @@ export function ChatWorkspace({
       </form>
     </main>
   );
+}
+
+function restoredMessages(messages: ConversationMessage[]): Message[] {
+  if (messages.length === 0) {
+    return [{ id: "assistant-initial", role: "assistant", content: INITIAL_MESSAGE }];
+  }
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    response: message.response ?? undefined,
+  }));
 }

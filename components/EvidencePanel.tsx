@@ -1,6 +1,7 @@
 "use client";
 
 import { BookOpen, ChevronDown, Database, Gauge, ShieldAlert } from "lucide-react";
+import { useEffect } from "react";
 import { EVIDENCE_KIND_LABELS, VERIFICATION_LABELS } from "@/lib/options";
 import type { Evidence } from "@/lib/types";
 
@@ -8,9 +9,19 @@ type Props = {
   evidence: Evidence[];
   uncertainties: string[];
   latencyMs?: number;
+  focusedCitation?: number;
 };
 
-export function EvidencePanel({ evidence, uncertainties, latencyMs }: Props) {
+export function EvidencePanel({ evidence, uncertainties, latencyMs, focusedCitation }: Props) {
+  useEffect(() => {
+    if (!focusedCitation) return;
+    const item = document.getElementById(`evidence-${focusedCitation}`);
+    if (!(item instanceof HTMLDetailsElement)) return;
+    item.open = true;
+    item.focus({ preventScroll: true });
+    item.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }, [focusedCitation, evidence]);
+
   return (
     <aside className="evidence-panel" aria-label="证据链">
       <div className="panel-heading">
@@ -38,7 +49,14 @@ export function EvidencePanel({ evidence, uncertainties, latencyMs }: Props) {
           </div>
         ) : (
           evidence.map((item, index) => (
-            <details key={`${item.id}-${index}`} className="evidence-item" open={index === 0}>
+            <details
+              id={`evidence-${index + 1}`}
+              key={`${item.id}-${index}`}
+              className="evidence-item"
+              open={index === 0 || focusedCitation === index + 1}
+              tabIndex={-1}
+              data-focused={focusedCitation === index + 1 ? "true" : undefined}
+            >
               <summary>
                 <span className="evidence-index">{String(index + 1).padStart(2, "0")}</span>
                 <span className={`evidence-kind kind-${item.kind}`}>

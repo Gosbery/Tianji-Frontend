@@ -1,274 +1,208 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
-import { askQuestion, calculateChart, sendFeedback } from "@/lib/api";
-import type { ChartFacts, ChatResponse, Pillar } from "@/lib/types";
+import {
+  archiveTask,
+  calculateChart,
+  createTask,
+  getExperts,
+  getTask,
+  listTasks,
+  renameTask,
+  restoreTask,
+} from "@/lib/api";
+import type { ChartFacts, ResearchTaskDetail } from "@/lib/types";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
-    askQuestion: vi.fn(),
+    archiveTask: vi.fn(),
     calculateChart: vi.fn(),
+    cancelTaskJob: vi.fn(),
+    createTask: vi.fn(),
+    getExperts: vi.fn(),
+    getTask: vi.fn(),
+    listTasks: vi.fn(),
+    renameTask: vi.fn(),
+    restoreTask: vi.fn(),
+    retryTaskJob: vi.fn(),
     sendFeedback: vi.fn(),
+    sendTaskMessage: vi.fn(),
   };
 });
 
-const calculateChartMock = vi.mocked(calculateChart);
-const askQuestionMock = vi.mocked(askQuestion);
-const sendFeedbackMock = vi.mocked(sendFeedback);
+const chart: ChartFacts = {
+  calculated_at: "2026-09-04T00:00:00Z",
+  birth: {
+    date: "1990-01-01",
+    time: "12:00",
+    gender: "male",
+    timezone: "Asia/Shanghai",
+    name: "测试",
+  },
+  pillars: [
+    { key: "year", label: "年柱", stem: "庚", branch: "午", stem_element: "金", stem_yin_yang: "阳", branch_element: "火", hidden_stems: ["丁"], ten_god_stem: "偏财", ten_god_branches: ["伤官"], nayin: "路旁土" },
+    { key: "month", label: "月柱", stem: "戊", branch: "子", stem_element: "土", stem_yin_yang: "阳", branch_element: "水", hidden_stems: ["癸"], ten_god_stem: "食神", ten_god_branches: ["正官"], nayin: "霹雳火" },
+    { key: "day", label: "日柱", stem: "甲", branch: "辰", stem_element: "木", stem_yin_yang: "阳", branch_element: "土", hidden_stems: ["戊"], ten_god_stem: "", ten_god_branches: ["偏财"], nayin: "覆灯火" },
+    { key: "time", label: "时柱", stem: "壬", branch: "午", stem_element: "水", stem_yin_yang: "阳", branch_element: "火", hidden_stems: ["丁"], ten_god_stem: "偏印", ten_god_branches: ["伤官"], nayin: "杨柳木" },
+  ],
+  day_master: "甲",
+  day_master_element: "木",
+  day_master_yin_yang: "阳",
+  month_command: { branch: "子", main_hidden_stem: "癸", ten_god: "正印" },
+  exposed_stems: [],
+  roots: [],
+  structural_relations: [],
+  pattern_candidates: [],
+  luck: {
+    direction: "forward",
+    direction_label: "顺排",
+    start_at: "1995-01-01T00:00:00",
+    start_offset_years: 5,
+    start_offset_months: 0,
+    start_offset_days: 0,
+    start_offset_hours: 0,
+    method: "test",
+    cycles: [],
+    current_cycle: null,
+    next_cycle: null,
+  },
+  calculation_basis: "test",
+  uncertainties: [],
+};
 
-function pillar(key: Pillar["key"], label: string, stem: string, branch: string): Pillar {
+function task(id: string, name: string, archived = false): ResearchTaskDetail {
   return {
-    key,
-    label,
-    stem,
-    branch,
-    stem_element: stem === "甲" ? "木" : "金",
-    stem_yin_yang: "阳",
-    branch_element: "水",
-    hidden_stems: ["癸"],
-    ten_god_stem: key === "day" ? "" : "比肩",
-    ten_god_branches: ["伤官"],
-    nayin: "测试纳音",
-  };
-}
-
-function chart(dayMaster: string, date = "1990-01-01"): ChartFacts {
-  return {
-    calculated_at: "2026-09-01T00:00:00Z",
-    birth: { date, time: "12:00", timezone: "Asia/Shanghai", name: "访客" },
-    pillars: [
-      pillar("year", "年柱", "庚", "午"),
-      pillar("month", "月柱", "戊", "子"),
-      pillar("day", "日柱", dayMaster, "辰"),
-      pillar("time", "时柱", "壬", "午"),
-    ],
-    day_master: dayMaster,
-    day_master_element: dayMaster === "甲" ? "木" : "金",
-    day_master_yin_yang: "阳",
-    month_command: { branch: "子", main_hidden_stem: "癸", ten_god: "正官" },
-    exposed_stems: [],
-    roots: [],
-    structural_relations: [],
-    pattern_candidates: [],
-    calculation_basis: "test",
-    uncertainties: [],
-  };
-}
-
-function response(sessionId: string, messageId: string, answer: string): ChatResponse {
-  return {
-    session_id: sessionId,
-    message_id: messageId,
-    answer,
-    evidence: [],
-    uncertainties: [],
-    followups: [],
+    id,
+    title: `${name} · 梁湘润方法`,
+    expert_id: "liang-xiangrun",
+    expert_version: "0.1-preview",
+    expert_name: "梁湘润方法",
+    birth: { ...chart.birth, name },
+    chart: { ...chart, birth: { ...chart.birth, name } },
+    school: "子平格局法",
+    evidence_scope: "personal_preview",
     mode: "hybrid_rerank",
-    latency_ms: 10,
-    token_usage: null,
+    archived,
+    created_at: "2026-09-04T00:00:00Z",
+    updated_at: "2026-09-04T00:00:00Z",
+    active_job: null,
+    messages: [],
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
+const experts = {
+  default_expert_id: "liang-xiangrun",
+  experts: [
+    {
+      id: "comprehensive",
+      display_name: "综合研究",
+      version: "1.0",
+      review_status: "reviewed" as const,
+      allowed_schools: ["基础共识"],
+      preferred_schools: ["基础共识"],
+      methodology: ["证据优先"],
+      boundaries: ["不冒充人物"],
+      attribution: "项目方法",
+      is_default: false,
+    },
+    {
+      id: "liang-xiangrun",
+      display_name: "梁湘润方法",
+      version: "0.1-preview",
+      review_status: "machine_verified" as const,
+      allowed_schools: ["基础共识", "子平格局法"],
+      preferred_schools: ["子平格局法"],
+      methodology: ["月令与格局", "成败救应"],
+      boundaries: ["不冒充人物"],
+      attribution: "研究摘要",
+      is_default: true,
+    },
+  ],
+};
 
 beforeEach(() => {
-  calculateChartMock.mockReset();
-  askQuestionMock.mockReset();
-  sendFeedbackMock.mockReset();
+  localStorage.clear();
+  vi.mocked(getExperts).mockReset().mockResolvedValue(experts);
+  vi.mocked(listTasks).mockReset().mockResolvedValue({ tasks: [] });
+  vi.mocked(getTask).mockReset();
+  vi.mocked(calculateChart).mockReset().mockResolvedValue(chart);
+  vi.mocked(createTask).mockReset();
+  vi.mocked(renameTask).mockReset();
+  vi.mocked(archiveTask).mockReset();
+  vi.mocked(restoreTask).mockReset();
 });
 
-describe("Home request state", () => {
-  it("cancels the default chart when birth input changes during initial loading", async () => {
-    const initial = deferred<ChartFacts>();
-    calculateChartMock.mockImplementationOnce(() => initial.promise);
-    render(<Home />);
-    await waitFor(() => expect(calculateChartMock).toHaveBeenCalledTimes(1));
-
-    fireEvent.change(screen.getByLabelText("出生日期"), { target: { value: "1994-04-04" } });
-    expect(calculateChartMock.mock.calls[0][1]?.aborted).toBe(true);
-    expect(screen.getByRole("button", { name: "重新排盘" })).toBeDefined();
-    initial.resolve(chart("庚"));
-
-    await waitFor(() => expect(screen.queryByText("已计算")).toBeNull());
-    calculateChartMock.mockResolvedValueOnce(chart("甲", "1994-04-04"));
-    fireEvent.click(screen.getByRole("button", { name: "重新排盘" }));
-    await screen.findByText("已计算");
-  });
-
-  it("resets the conversation and session after a successful chart change", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    askQuestionMock
-      .mockResolvedValueOnce(response("session-old", "message-old", "旧命盘回答"))
-      .mockResolvedValueOnce(response("session-new", "message-new", "新命盘回答"));
+describe("multi-expert task workspace", () => {
+  it("opens the creation view and defaults to the Liang methodology", async () => {
     render(<Home />);
 
-    await screen.findByText("已计算");
-    const question = screen.getByRole("textbox", { name: "问题" });
-    fireEvent.change(question, { target: { value: "旧命盘问题" } });
-    fireEvent.submit(question.closest("form")!);
-    await screen.findByText("旧命盘回答");
-
-    calculateChartMock.mockResolvedValueOnce(chart("甲", "1991-02-03"));
-    fireEvent.change(screen.getByLabelText("出生日期"), { target: { value: "1991-02-03" } });
-    expect(screen.getByRole("textbox", { name: "问题" })).toHaveProperty("disabled", true);
-    expect(screen.getByText("出生信息已修改，请先重新排盘")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "重新排盘" }));
-
-    await waitFor(() => expect(screen.queryByText("旧命盘回答")).toBeNull());
-    const resetQuestion = screen.getByRole("textbox", { name: "问题" });
-    fireEvent.change(resetQuestion, { target: { value: "新命盘问题" } });
-    fireEvent.submit(resetQuestion.closest("form")!);
-    await screen.findByText("新命盘回答");
-
-    expect(askQuestionMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        chart: expect.objectContaining({ day_master: "甲" }),
-        sessionId: undefined,
-      }),
-      expect.any(AbortSignal),
-    );
+    expect(await screen.findByRole("heading", { name: "选择分析方法" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /梁湘润方法/ }).className).toContain("active");
+    expect(calculateChart).toHaveBeenCalled();
   });
 
-  it("aborts the older chart request and ignores a late result", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    render(<Home />);
-    await screen.findByText("已计算");
-
-    const older = deferred<ChartFacts>();
-    const newer = deferred<ChartFacts>();
-    calculateChartMock
-      .mockImplementationOnce(() => older.promise)
-      .mockImplementationOnce(() => newer.promise);
-    const form = screen.getByLabelText("出生日期").closest("form")!;
-
-    fireEvent.change(screen.getByLabelText("出生日期"), { target: { value: "1991-01-01" } });
-    fireEvent.submit(form);
-    fireEvent.change(screen.getByLabelText("出生日期"), { target: { value: "1992-01-01" } });
-    fireEvent.submit(form);
-
-    const olderSignal = calculateChartMock.mock.calls[1][1];
-    expect(olderSignal?.aborted).toBe(true);
-    newer.resolve(chart("甲", "1992-01-01"));
-    await screen.findAllByText("甲");
-    older.resolve(chart("乙", "1991-01-01"));
-
-    await waitFor(() => {
-      expect(screen.queryAllByText("乙")).toHaveLength(0);
-      expect(screen.getAllByText("甲").length).toBeGreaterThan(0);
-    });
-  });
-
-  it("keeps a failed replacement chart read-only for conversation", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    render(<Home />);
-    await screen.findByText("已计算");
-
-    fireEvent.change(screen.getByLabelText("出生日期"), { target: { value: "1993-01-01" } });
-    calculateChartMock.mockRejectedValueOnce(new Error("排盘服务失败"));
-    fireEvent.click(screen.getByRole("button", { name: "重新排盘" }));
-
-    await screen.findByRole("alert");
-    expect(screen.getByText("待重新计算")).toBeDefined();
-    expect(screen.getByText("出生信息已修改，请先重新排盘")).toBeDefined();
-    expect(screen.getByRole("textbox", { name: "问题" })).toHaveProperty("disabled", true);
-    expect(screen.getAllByText("庚").length).toBeGreaterThan(0);
-  });
-
-  it("locks retrieval settings during a request and clears stale evidence after a change", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    const pending = deferred<ChatResponse>();
-    askQuestionMock.mockImplementationOnce(() => pending.promise);
+  it("creates a task with the selected immutable chart and expert", async () => {
+    const created = task("task-created", "测试");
+    vi.mocked(createTask).mockResolvedValue(created);
+    vi.mocked(listTasks)
+      .mockResolvedValueOnce({ tasks: [] })
+      .mockResolvedValue({ tasks: [created] });
     render(<Home />);
 
-    await screen.findByText("已计算");
-    const question = screen.getByRole("textbox", { name: "问题" });
-    fireEvent.change(question, { target: { value: "测试检索设置" } });
-    fireEvent.submit(question.closest("form")!);
+    await screen.findByRole("heading", { name: "选择分析方法" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "创建任务" })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
 
-    expect(screen.getByRole("button", { name: "Dense" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("switch", { name: "纳入机器校勘资料" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-    expect(screen.getByRole("combobox", { name: "知识流派" })).toHaveProperty("disabled", true);
-
-    pending.resolve({ ...response("session", "message", "设置回答"), latency_ms: 321 });
-    await screen.findByText("设置回答");
-    expect(screen.getByText("321 ms")).toBeDefined();
-
-    fireEvent.click(screen.getByRole("button", { name: "Dense" }));
-    expect(screen.queryByText("321 ms")).toBeNull();
+    await screen.findByText("测试 · 梁湘润方法");
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ expertId: "liang-xiangrun" }));
+    expect(screen.queryByRole("button", { name: "预览命盘" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "知识流派" })).toBeNull();
   });
 
-  it("routes historical feedback with that answer's session and message ids", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    askQuestionMock
-      .mockResolvedValueOnce(response("session-old", "message-old", "第一条回答"))
-      .mockResolvedValueOnce(response("session-new", "message-new", "第二条回答"));
-    sendFeedbackMock.mockResolvedValueOnce(undefined);
+  it("restores the latest task and switches without modifying either chart", async () => {
+    const first = task("task-first", "甲");
+    const second = task("task-second", "乙");
+    vi.mocked(listTasks).mockResolvedValue({ tasks: [first, second] });
+    vi.mocked(getTask).mockImplementation(async (id) => id === first.id ? first : second);
     render(<Home />);
 
-    await screen.findByText("已计算");
-    const question = screen.getByRole("textbox", { name: "问题" });
-    fireEvent.change(question, { target: { value: "第一个问题" } });
-    fireEvent.submit(question.closest("form")!);
-    await screen.findByText("第一条回答");
-    fireEvent.change(question, { target: { value: "第二个问题" } });
-    fireEvent.submit(question.closest("form")!);
-    await screen.findByText("第二条回答");
-
-    fireEvent.click(screen.getAllByRole("button", { name: "有帮助" })[0]);
-
-    await waitFor(() => {
-      expect(sendFeedbackMock).toHaveBeenCalledWith(
-        "session-old",
-        "message-old",
-        1,
-        "",
-      );
-    });
+    await screen.findByText("甲 · 梁湘润方法");
+    fireEvent.click(screen.getByRole("button", { name: "乙 · 梁湘润方法梁湘润方法" }));
+    await waitFor(() => expect(getTask).toHaveBeenLastCalledWith("task-second"));
+    expect(screen.getByDisplayValue("乙")).toHaveProperty("readOnly", true);
   });
 
-  it("ignores a pending chat response that arrives after birth input changes", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    const pending = deferred<ChatResponse>();
-    askQuestionMock.mockImplementationOnce(() => pending.promise);
+  it("renames a task from the sidebar", async () => {
+    const existing = task("task-one", "测试");
+    vi.mocked(listTasks).mockResolvedValue({ tasks: [existing] });
+    vi.mocked(getTask).mockResolvedValue(existing);
+    vi.mocked(renameTask).mockResolvedValue({ ...existing, title: "新的标题" });
     render(<Home />);
 
-    await screen.findByText("已计算");
-    const question = screen.getByRole("textbox", { name: "问题" });
-    fireEvent.change(question, { target: { value: "待处理问题" } });
-    fireEvent.submit(question.closest("form")!);
-    await screen.findByText("待处理问题");
+    await screen.findByText(existing.title);
+    fireEvent.click(screen.getByRole("button", { name: `重命名 ${existing.title}` }));
+    fireEvent.change(screen.getByRole("textbox", { name: "任务标题" }), { target: { value: "新的标题" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存任务标题" }));
 
-    const signal = askQuestionMock.mock.calls[0][1];
-    fireEvent.change(screen.getByLabelText("出生日期"), {
-      target: { value: "1995-05-05" },
-    });
-    expect(signal?.aborted).toBe(true);
-    pending.resolve(response("late-session", "late-message", "不应出现的晚到回答"));
-
-    await waitFor(() => expect(screen.queryByText("待处理问题")).toBeNull());
-    expect(screen.queryByText("不应出现的晚到回答")).toBeNull();
+    await waitFor(() => expect(renameTask).toHaveBeenCalledWith(existing.id, "新的标题"));
   });
 
-  it("keeps every decorative icon out of the accessibility tree", async () => {
-    calculateChartMock.mockResolvedValueOnce(chart("庚"));
-    const { container } = render(<Home />);
+  it("archives without deleting and exposes restoration in the archive group", async () => {
+    const existing = task("task-one", "测试");
+    const archived = task("task-one", "测试", true);
+    vi.mocked(listTasks)
+      .mockResolvedValueOnce({ tasks: [existing] })
+      .mockResolvedValue({ tasks: [archived] });
+    vi.mocked(getTask).mockResolvedValue(existing);
+    vi.mocked(archiveTask).mockResolvedValue(archived);
+    render(<Home />);
 
-    await screen.findByText("已计算");
-    const icons = Array.from(container.querySelectorAll("svg"));
-    expect(icons.length).toBeGreaterThan(0);
-    for (const icon of icons) {
-      expect(icon.closest('[aria-hidden="true"]')).not.toBeNull();
-    }
+    await screen.findByText(existing.title);
+    fireEvent.click(screen.getByRole("button", { name: `归档 ${existing.title}` }));
+    await screen.findByRole("button", { name: /已归档/ });
+    fireEvent.click(screen.getByRole("button", { name: /已归档/ }));
+    expect(screen.getByRole("button", { name: `恢复 ${existing.title}` })).toBeDefined();
   });
 });

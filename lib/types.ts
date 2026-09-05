@@ -1,6 +1,7 @@
 export type BirthInput = {
   date: string;
   time: string;
+  gender: "male" | "female";
   timezone: string;
   name: string;
 };
@@ -68,8 +69,33 @@ export type ChartFacts = {
     exposed_positions: string[];
     note: string;
   }>;
+  luck?: {
+    direction: "forward" | "reverse";
+    direction_label: "顺排" | "逆排";
+    start_at: string;
+    start_offset_years: number;
+    start_offset_months: number;
+    start_offset_days: number;
+    start_offset_hours: number;
+    method: string;
+    cycles: LuckCycle[];
+    current_cycle: LuckCycle | null;
+    next_cycle: LuckCycle | null;
+  };
   calculation_basis: string;
   uncertainties: string[];
+};
+
+export type LuckCycle = {
+  index: number;
+  ganzhi: string;
+  stem: string;
+  branch: string;
+  start_year: number;
+  end_year: number;
+  start_age: number;
+  end_age: number;
+  status: "past" | "current" | "future";
 };
 
 export type Evidence = {
@@ -96,6 +122,7 @@ export type Evidence = {
   confidence: number;
   warning: string;
   unresolved_variants: string[];
+  concepts: string[];
 };
 
 export type ChatResponse = {
@@ -108,6 +135,101 @@ export type ChatResponse = {
   mode: string;
   latency_ms: number;
   token_usage: number | null;
+  policy_decision: string;
+  citations_validated: boolean;
+  degradation_reason: string;
+};
+
+export type ConversationMessage = {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+  turn_index: number;
+  created_at: string;
+  response: ChatResponse | null;
+};
+
+export type ConversationHistory = {
+  session_id: string;
+  chart_fingerprint: string;
+  school: KnowledgeSchool;
+  evidence_scope: EvidenceScope;
+  messages: ConversationMessage[];
+};
+
+export type ExpertProfile = {
+  id: string;
+  display_name: string;
+  version: string;
+  review_status: "draft" | "machine_verified" | "reviewed" | "retired";
+  allowed_schools: string[];
+  preferred_schools: string[];
+  methodology: string[];
+  boundaries: string[];
+  attribution: string;
+  is_default: boolean;
+};
+
+export type ExpertList = {
+  experts: ExpertProfile[];
+  default_expert_id: string;
+};
+
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export type GenerationJob = {
+  id: string;
+  task_id: string;
+  question: string;
+  status: JobStatus;
+  progress: string;
+  error: string;
+  assistant_message_id: string;
+  attempt_count: number;
+  recovery_count: number;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+};
+
+export type ResearchTask = {
+  id: string;
+  title: string;
+  expert_id: string;
+  expert_version: string;
+  expert_name: string;
+  birth: BirthInput;
+  chart: ChartFacts;
+  school: string;
+  evidence_scope: EvidenceScope;
+  mode: RetrievalMode | "lightrag";
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+  active_job: GenerationJob | null;
+};
+
+export type ResearchTaskDetail = ResearchTask & {
+  messages: ConversationMessage[];
+};
+
+export type TaskList = { tasks: ResearchTask[] };
+
+export type TaskEvent = {
+  type: string;
+  task_id?: string;
+  job?: GenerationJob;
+  response?: ChatResponse;
+};
+
+export type KnowledgeOverview = {
+  layers: Record<string, number>;
+  reviewed: Record<string, number>;
+  machine_verified: Record<string, number>;
+  retrieval_documents: number;
+  preview_documents: number;
+  schools: Record<string, { reviewed: number; machine_verified: number }>;
 };
 
 export type RetrievalMode = "dense" | "hybrid" | "hybrid_rerank";

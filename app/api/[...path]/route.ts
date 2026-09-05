@@ -97,4 +97,4 @@ export async function proxyRequest(request: Request, context: ProxyContext): Pro
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export { proxyRequest as GET, proxyRequest as HEAD, proxyRequest as POST };
+export { proxyRequest as GET, proxyRequest as HEAD, proxyRequest as PATCH, proxyRequest as POST };

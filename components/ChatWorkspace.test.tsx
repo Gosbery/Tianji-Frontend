@@ -8,6 +8,7 @@ const chart: ChartFacts = {
   birth: {
     date: "1990-01-01",
     time: "12:00",
+    gender: "male",
     timezone: "Asia/Shanghai",
     name: "访客",
   },
@@ -20,6 +21,19 @@ const chart: ChartFacts = {
   roots: [],
   structural_relations: [],
   pattern_candidates: [],
+  luck: {
+    direction: "forward",
+    direction_label: "顺排",
+    start_at: "1995-01-01T00:00:00",
+    start_offset_years: 5,
+    start_offset_months: 0,
+    start_offset_days: 0,
+    start_offset_hours: 0,
+    method: "test",
+    cycles: [],
+    current_cycle: null,
+    next_cycle: null,
+  },
   calculation_basis: "test",
   uncertainties: [],
 };
@@ -29,12 +43,31 @@ function response(sessionId: string, messageId: string, answer: string): ChatRes
     session_id: sessionId,
     message_id: messageId,
     answer,
-    evidence: [],
+    evidence: [{
+      id: "evidence-1",
+      kind: "knowledge_card",
+      layer: 3,
+      title: "测试依据",
+      quote: "测试原文",
+      source: "test",
+      score: 1,
+      matched_by: ["test"],
+      trace_refs: [],
+      review_status: "reviewed",
+      verification_level: "human_review",
+      confidence: 1,
+      warning: "",
+      unresolved_variants: [],
+      concepts: ["正官"],
+    }],
     uncertainties: [],
     followups: [],
     mode: "hybrid_rerank",
     latency_ms: 12,
     token_usage: 42,
+    policy_decision: "allow",
+    citations_validated: true,
+    degradation_reason: "",
   };
 }
 
@@ -49,6 +82,9 @@ function workspaceProps() {
     onAsk: vi.fn(),
     onFeedback: vi.fn().mockResolvedValue(undefined),
     onSchoolChange: vi.fn(),
+    availableSchools: ["基础共识" as const],
+    onResponseSelect: vi.fn(),
+    onCitation: vi.fn(),
   };
 }
 
@@ -87,6 +123,38 @@ describe("ChatWorkspace", () => {
     expect(textbox).toHaveProperty("value", "我正在输入的问题");
     fireEvent.click(screen.getByRole("button", { name: "建议追问" }));
     expect(textbox).toHaveProperty("value", "建议追问");
+  });
+
+  it("fills a complete question from a fortune topic without submitting it", () => {
+    const onAsk = vi.fn();
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "父母助益" }));
+
+    expect(screen.getByRole("textbox", { name: "问题" })).toHaveProperty(
+      "value",
+      expect.stringContaining("父母与原生家庭"),
+    );
+    expect(onAsk).not.toHaveBeenCalled();
+  });
+
+  it("offers the main topics users expect from a complete reading", () => {
+    render(<ChatWorkspace {...workspaceProps()} />);
+
+    for (const topic of [
+      "全面总览",
+      "父母助益",
+      "兄弟姐妹",
+      "朋友人脉",
+      "桃花感情",
+      "婚姻伴侣",
+      "事业发展",
+      "财富收入",
+      "身心健康",
+      "大运流年",
+    ]) {
+      expect(screen.getByRole("button", { name: topic })).toBeDefined();
+    }
   });
 
   it("submits feedback against the selected response, not the latest response", async () => {
@@ -134,5 +202,14 @@ describe("FormattedAnswer", () => {
     expect(screen.getByRole("heading", { level: 3, name: "判断" })).toBeDefined();
     expect(screen.getByRole("list")).toBeDefined();
     expect(screen.getByText("日主").tagName).toBe("STRONG");
+  });
+
+  it("turns numeric citations into evidence controls", () => {
+    const onCitation = vi.fn();
+    render(<FormattedAnswer text="判断来自 [1]。" onCitation={onCitation} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "查看依据 1" }));
+
+    expect(onCitation).toHaveBeenCalledWith(1);
   });
 });

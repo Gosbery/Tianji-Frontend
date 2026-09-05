@@ -21,6 +21,8 @@ type Props = {
   onBirthChange: (birth: BirthInput) => void;
   onCalculate: () => void;
   onPillarClick: (pillar: Pillar) => void;
+  readOnly?: boolean;
+  calculateLabel?: string;
 };
 
 export function ChartPanel({
@@ -32,6 +34,8 @@ export function ChartPanel({
   onBirthChange,
   onCalculate,
   onPillarClick,
+  readOnly = false,
+  calculateLabel = "重新排盘",
 }: Props) {
   return (
     <aside className="chart-panel" aria-label="命盘" aria-busy={loading}>
@@ -62,6 +66,7 @@ export function ChartPanel({
             maxLength={80}
             autoComplete="name"
             placeholder="访客"
+            readOnly={readOnly}
             onChange={(event) => onBirthChange({ ...birth, name: event.target.value })}
           />
         </label>
@@ -82,6 +87,7 @@ export function ChartPanel({
             min="1900-01-01"
             max="2100-12-31"
             required
+            readOnly={readOnly}
             onChange={(event) => onBirthChange({ ...birth, date: event.target.value })}
           />
         </label>
@@ -91,17 +97,37 @@ export function ChartPanel({
             type="time"
             value={birth.time}
             required
+            readOnly={readOnly}
             onChange={(event) => onBirthChange({ ...birth, time: event.target.value })}
           />
         </label>
-        <button
+        <fieldset className="gender-field">
+          <legend><UserRound size={14} aria-hidden="true" />性别（用于排大运）</legend>
+          <div className="gender-segmented">
+            <button
+              type="button"
+              className={birth.gender === "male" ? "active" : ""}
+              aria-pressed={birth.gender === "male"}
+              disabled={readOnly}
+              onClick={() => onBirthChange({ ...birth, gender: "male" })}
+            >男</button>
+            <button
+              type="button"
+              className={birth.gender === "female" ? "active" : ""}
+              aria-pressed={birth.gender === "female"}
+              disabled={readOnly}
+              onClick={() => onBirthChange({ ...birth, gender: "female" })}
+            >女</button>
+          </div>
+        </fieldset>
+        {!readOnly && <button
           type="submit"
           className="secondary-button calculate-button"
           disabled={loading}
         >
           <RefreshCw size={15} className={loading ? "spin" : ""} aria-hidden="true" />
-          {loading ? "计算中" : "重新排盘"}
-        </button>
+          {loading ? "计算中" : calculateLabel}
+        </button>}
       </form>
 
       {chart && (
@@ -111,6 +137,28 @@ export function ChartPanel({
             <strong>{chart.day_master}</strong>
             <span>{chart.day_master_yin_yang}{chart.day_master_element}</span>
           </div>
+          {chart.luck && <div className="luck-summary" aria-label="大运">
+            <div className="luck-summary-heading">
+              <span>大运 · {chart.luck.direction_label} · 历法程序计算</span>
+              <small>{chart.luck.start_at.slice(0, 10)} 起运</small>
+            </div>
+            <div className="luck-cycles">
+              <div>
+                <span>当前</span>
+                <strong>{chart.luck.current_cycle?.ganzhi ?? "未起运"}</strong>
+                <small>{chart.luck.current_cycle
+                  ? `${chart.luck.current_cycle.start_year}—${chart.luck.current_cycle.end_year}`
+                  : "-"}</small>
+              </div>
+              <div>
+                <span>下一步</span>
+                <strong>{chart.luck.next_cycle?.ganzhi ?? "-"}</strong>
+                <small>{chart.luck.next_cycle
+                  ? `${chart.luck.next_cycle.start_year}—${chart.luck.next_cycle.end_year}`
+                  : "-"}</small>
+              </div>
+            </div>
+          </div>}
           <div className="pillars-grid">
             {chart.pillars.map((pillar) => (
               <button

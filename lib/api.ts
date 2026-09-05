@@ -2,9 +2,16 @@ import type {
   BirthInput,
   ChartFacts,
   ChatResponse,
+  ConversationHistory,
   EvidenceScope,
+  KnowledgeOverview,
   KnowledgeSchool,
   RetrievalMode,
+  ExpertList,
+  GenerationJob,
+  ResearchTask,
+  ResearchTaskDetail,
+  TaskList,
 } from "@/lib/types";
 
 // Default to the same-origin Next.js proxy so local frontend ports do not require
@@ -15,7 +22,19 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "")
 type ApiErrorPayload = {
   detail?: unknown;
   message?: unknown;
+  code?: unknown;
 };
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code = "",
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 export function isAbortError(reason: unknown): boolean {
   return Boolean(
@@ -83,7 +102,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       }
       payload = {};
     }
-    throw new Error(apiErrorMessage(payload, response.status));
+    const code = payload && typeof payload === "object" && "code" in payload
+      && typeof payload.code === "string" ? payload.code : "";
+    throw new ApiError(apiErrorMessage(payload, response.status), response.status, code);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -147,7 +168,9 @@ async function streamRequest(
         throw new Error("无法连接本地后端服务，请确认 API 已启动");
       }
     }
-    throw new Error(apiErrorMessage(errorPayload, response.status));
+    const code = errorPayload && typeof errorPayload === "object" && "code" in errorPayload
+      && typeof errorPayload.code === "string" ? errorPayload.code : "";
+    throw new ApiError(apiErrorMessage(errorPayload, response.status), response.status, code);
   }
 
   if (!response.body) throw new Error("流式响应不可用，请稍后重试");
@@ -198,4 +221,93 @@ export function sendFeedback(sessionId: string, messageId: string, rating: -1 | 
     method: "POST",
     body: JSON.stringify({ session_id: sessionId, message_id: messageId, rating, note }),
   });
+}
+
+export function getConversation(sessionId: string, signal?: AbortSignal) {
+  return request<ConversationHistory>(`/api/v1/conversations/${encodeURIComponent(sessionId)}`, {
+    signal,
+    cache: "no-store",
+  });
+}
+
+export function getKnowledgeOverview(signal?: AbortSignal) {
+  return request<KnowledgeOverview>("/api/v1/knowledge/overview", {
+    signal,
+    cache: "no-store",
+  });
+}
+
+export function getExperts(scope: EvidenceScope = "personal_preview", signal?: AbortSignal) {
+  return request<ExpertList>(`/api/v1/experts?scope=${encodeURIComponent(scope)}`, {
+    signal,
+    cache: "no-store",
+  });
+}
+
+export function listTasks(signal?: AbortSignal) {
+  return request<TaskList>("/api/v1/tasks", { signal, cache: "no-store" });
+}
+
+export function getTask(taskId: string, signal?: AbortSignal) {
+  return request<ResearchTaskDetail>(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+    signal,
+    cache: "no-store",
+  });
+}
+
+export function createTask(input: {
+  birth: BirthInput;
+  expertId: string;
+  evidenceScope: EvidenceScope;
+  mode: RetrievalMode;
+}) {
+  return request<ResearchTaskDetail>("/api/v1/tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      birth: input.birth,
+      expert_id: input.expertId,
+      evidence_scope: input.evidenceScope,
+      mode: input.mode,
+    }),
+  });
+}
+
+export function renameTask(taskId: string, title: string) {
+  return request<ResearchTask>(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function archiveTask(taskId: string) {
+  return request<ResearchTask>(`/api/v1/tasks/${encodeURIComponent(taskId)}/archive`, {
+    method: "POST",
+  });
+}
+
+export function restoreTask(taskId: string) {
+  return request<ResearchTask>(`/api/v1/tasks/${encodeURIComponent(taskId)}/restore`, {
+    method: "POST",
+  });
+}
+
+export function sendTaskMessage(taskId: string, question: string) {
+  return request<GenerationJob>(`/api/v1/tasks/${encodeURIComponent(taskId)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
+
+export function cancelTaskJob(taskId: string, jobId: string) {
+  return request<GenerationJob>(
+    `/api/v1/tasks/${encodeURIComponent(taskId)}/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function retryTaskJob(taskId: string, jobId: string) {
+  return request<GenerationJob>(
+    `/api/v1/tasks/${encodeURIComponent(taskId)}/jobs/${encodeURIComponent(jobId)}/retry`,
+    { method: "POST" },
+  );
 }
