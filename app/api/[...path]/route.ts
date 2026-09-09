@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { requireAppAccess } from "@/lib/server-auth";
 
 const BACKEND_API_BASE = (process.env.BACKEND_API_URL ?? "http://127.0.0.1:8000").replace(
   /\/$/,
@@ -13,6 +14,7 @@ const REQUEST_HEADERS = [
   "authorization",
   "content-type",
   "x-api-key",
+  "x-bazi-access-key",
   "x-request-id",
 ] as const;
 
@@ -59,6 +61,9 @@ function attachTrustedClientIdentity(source: Headers, destination: Headers): voi
 }
 
 export async function proxyRequest(request: Request, context: ProxyContext): Promise<Response> {
+  const denied = requireAppAccess(request);
+  if (denied) return denied;
+
   const { path } = await context.params;
   const upstreamUrl = new URL(
     `/api/${path.map((segment) => encodeURIComponent(segment)).join("/")}`,
@@ -80,17 +85,22 @@ export async function proxyRequest(request: Request, context: ProxyContext): Pro
       cache: "no-store",
       signal: request.signal,
     });
+    const responseHeaders = selectedHeaders(upstream.headers, RESPONSE_HEADERS);
+    const isEventStream = responseHeaders.get("content-type")?.toLowerCase().includes("text/event-stream");
+    responseHeaders.set("cache-control", isEventStream
+      ? "private, no-store, no-transform"
+      : "private, no-store");
 
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: selectedHeaders(upstream.headers, RESPONSE_HEADERS),
+      headers: responseHeaders,
     });
   } catch (reason) {
     console.error("Backend proxy request failed", reason);
     return Response.json(
       { detail: "无法连接本地后端服务，请确认 API 已启动" },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "private, no-store" } },
     );
   }
 }

@@ -11,6 +11,7 @@ const birth = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("apiErrorMessage", () => {
@@ -31,6 +32,23 @@ describe("apiErrorMessage", () => {
 });
 
 describe("request behavior", () => {
+  it("keeps browser requests same-origin even when the legacy public API URL is configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://legacy-api.example");
+    vi.resetModules();
+    const api = await import("@/lib/api");
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.calculateChart(birth);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/chart",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("consumes SSE chunks and returns the terminal chat response", async () => {
     const response = {
       session_id: "session-1",

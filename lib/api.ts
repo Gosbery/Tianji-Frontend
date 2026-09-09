@@ -14,11 +14,6 @@ import type {
   TaskList,
 } from "@/lib/types";
 
-// Default to the same-origin Next.js proxy so local frontend ports do not require
-// matching CORS changes in the API. A public base URL remains available for
-// deployments that intentionally call the API directly from the browser.
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
-
 type ApiErrorPayload = {
   detail?: unknown;
   message?: unknown;
@@ -84,7 +79,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     const headers = new Headers(init?.headers);
     if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(path, {
       ...init,
       headers,
     });
@@ -147,7 +142,7 @@ async function streamRequest(
 ): Promise<ChatResponse> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify(payload),
