@@ -1,5 +1,4 @@
 import { isIP } from "node:net";
-import { requireAppAccess } from "@/lib/server-auth";
 
 const BACKEND_API_BASE = (process.env.BACKEND_API_URL ?? "http://127.0.0.1:8000").replace(
   /\/$/,
@@ -61,9 +60,6 @@ function attachTrustedClientIdentity(source: Headers, destination: Headers): voi
 }
 
 export async function proxyRequest(request: Request, context: ProxyContext): Promise<Response> {
-  const denied = requireAppAccess(request);
-  if (denied) return denied;
-
   const { path } = await context.params;
   const upstreamUrl = new URL(
     `/api/${path.map((segment) => encodeURIComponent(segment)).join("/")}`,
