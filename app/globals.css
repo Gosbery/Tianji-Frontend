@@ -2402,6 +2402,11 @@ a:focus-visible {
   grid-row: auto;
 }
 
+/* direct 回答不渲染证据面板：三栏网格退为两栏，图表区与对话区照常铺满。 */
+.task-workspace-grid--no-evidence {
+  grid-template-columns: minmax(300px, 330px) minmax(420px, 1fr);
+}
+
 .new-task-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(420px, 1fr);

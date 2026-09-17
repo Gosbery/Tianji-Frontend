@@ -192,6 +192,12 @@ export default function Home() {
   ));
   const activeBusy = activeTask?.active_job?.status === "queued"
     || activeTask?.active_job?.status === "running";
+  // 证据面板只服务旧检索会话：direct 回答旁不再显示“证据链”。
+  const legacyEvidence = useMemo(
+    () => latest?.evidence.filter((item) => item.kind !== "chart_fact") ?? [],
+    [latest],
+  );
+  const showEvidencePanel = legacyEvidence.length > 0;
 
   function beginCreate() {
     activeTaskIdRef.current = undefined;
@@ -359,7 +365,9 @@ export default function Home() {
             </section>
           </div>
         ) : activeTask ? (
-          <div className="workspace-grid task-workspace-grid">
+          <div
+            className={`workspace-grid task-workspace-grid${showEvidencePanel ? "" : " task-workspace-grid--no-evidence"}`}
+          >
             <ChartPanel
               birth={activeTask.birth}
               chart={activeTask.chart}
@@ -399,12 +407,14 @@ export default function Home() {
                 setFocusedCitation(citation <= response.evidence.length ? citation : undefined);
               }}
             />
-            <EvidencePanel
-              evidence={latest?.evidence.filter((item) => item.kind !== "chart_fact") ?? []}
-              uncertainties={latest?.uncertainties ?? activeTask.chart.uncertainties}
-              latencyMs={latest?.latency_ms}
-              focusedCitation={focusedCitation}
-            />
+            {showEvidencePanel && (
+              <EvidencePanel
+                evidence={legacyEvidence}
+                uncertainties={latest?.uncertainties ?? activeTask.chart.uncertainties}
+                latencyMs={latest?.latency_ms}
+                focusedCitation={focusedCitation}
+              />
+            )}
           </div>
         ) : (
           <div className="task-loading" role="status">{loading ? "正在读取任务" : "请选择任务"}</div>

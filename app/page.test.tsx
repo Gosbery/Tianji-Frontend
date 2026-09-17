@@ -12,7 +12,13 @@ import {
   restoreTask,
   sendTaskMessage,
 } from "@/lib/api";
-import type { ChartFacts, GenerationJob, ResearchTaskDetail } from "@/lib/types";
+import type {
+  ChartFacts,
+  ChatResponse,
+  Evidence,
+  GenerationJob,
+  ResearchTaskDetail,
+} from "@/lib/types";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -93,6 +99,58 @@ function task(id: string, name: string, archived = false): ResearchTaskDetail {
   };
 }
 
+function evidence(kind: Evidence["kind"]): Evidence {
+  return {
+    id: `ev-${kind}`,
+    kind,
+    layer: null,
+    title: "测试依据",
+    quote: "原文片段",
+    source: "测试来源",
+    score: 0.5,
+    matched_by: ["lexical"],
+    trace_refs: [],
+    review_status: "reviewed",
+    verification_level: "human_review",
+    confidence: 0.8,
+    warning: "",
+    unresolved_variants: [],
+    concepts: [],
+  };
+}
+
+function taskWithAnswer(kinds: Evidence["kind"][]): ResearchTaskDetail {
+  const base = task("task-one", "测试");
+  const response: ChatResponse = {
+    session_id: "session-1",
+    message_id: "message-1",
+    answer: "## 结论\n\n直接解读",
+    evidence: kinds.map(evidence),
+    uncertainties: [],
+    followups: [],
+    mode: "direct",
+    latency_ms: 1234,
+    token_usage: null,
+    policy_decision: "allow",
+    citations_validated: false,
+    degradation_reason: "",
+    verification: null,
+  };
+  return {
+    ...base,
+    messages: [
+      {
+        id: "message-1",
+        role: "assistant",
+        content: response.answer,
+        turn_index: 1,
+        created_at: "2026-09-04T00:00:00Z",
+        response,
+      },
+    ],
+  };
+}
+
 const experts = {
   default_expert_id: "liang-xiangrun",
   experts: [
@@ -164,6 +222,32 @@ describe("multi-expert task workspace", () => {
     }));
     expect(screen.queryByRole("button", { name: "预览命盘" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "知识流派" })).toBeNull();
+  });
+
+  it("hides the evidence panel for direct answers and keeps the workspace two-column", async () => {
+    const existing = taskWithAnswer(["chart_fact"]);
+    vi.mocked(listTasks).mockResolvedValue({ tasks: [existing] });
+    vi.mocked(getTask).mockResolvedValue(existing);
+    render(<Home />);
+
+    await waitFor(() => expect(getTask).toHaveBeenCalledWith(existing.id));
+    await waitFor(() => expect(document.querySelector(".task-workspace-grid--no-evidence")).not.toBeNull());
+    expect(screen.queryByRole("complementary", { name: "证据链" })).toBeNull();
+    expect(screen.queryByText("证据链")).toBeNull();
+    expect(screen.queryByText(/条召回/)).toBeNull();
+    expect(screen.getByRole("log")).toBeDefined();
+  });
+
+  it("keeps the evidence panel for legacy retrieval answers", async () => {
+    const existing = taskWithAnswer(["chart_fact", "canonical_passage"]);
+    vi.mocked(listTasks).mockResolvedValue({ tasks: [existing] });
+    vi.mocked(getTask).mockResolvedValue(existing);
+    render(<Home />);
+
+    await waitFor(() => expect(getTask).toHaveBeenCalledWith(existing.id));
+    expect(await screen.findByRole("complementary", { name: "证据链" })).toBeDefined();
+    expect(screen.getByText("1234 ms")).toBeDefined();
+    expect(document.querySelector(".task-workspace-grid--no-evidence")).toBeNull();
   });
 
   it("no longer renders a retrieval mode selector", async () => {
