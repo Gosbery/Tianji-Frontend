@@ -224,11 +224,14 @@ export type ResearchTaskDetail = ResearchTask & {
 
 export type TaskList = { tasks: ResearchTask[] };
 
+// SSE 广播给所有订阅者，因此不携带问题或答案正文：只发驱动刷新的标识与状态，
+// 正文由前端收到事件后重新 GET /tasks/{id} 获取。
+export type TaskEventJob = Omit<GenerationJob, "question">;
+
 export type TaskEvent = {
   type: string;
   task_id?: string;
-  job?: GenerationJob;
-  response?: ChatResponse;
+  job?: TaskEventJob;
 };
 
 export type KnowledgeOverview = {
