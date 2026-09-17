@@ -188,6 +188,56 @@ describe("ChatWorkspace", () => {
     );
   });
 
+  it("drops the tapped topic when a followup suggestion replaces the question", async () => {
+    const answered = {
+      ...response("session-followup", "message-followup", "第一次回答"),
+      followups: ["婚姻与伴侣怎么看？"],
+    };
+    const onAsk = vi.fn().mockResolvedValue(answered);
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.change(textbox, { target: { value: "先随便问问" } });
+    fireEvent.submit(textbox.closest("form")!);
+    await screen.findByText("第一次回答");
+
+    fireEvent.click(screen.getByRole("button", { name: "财富收入" }));
+    fireEvent.click(screen.getByRole("button", { name: "婚姻与伴侣怎么看？" }));
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(onAsk).toHaveBeenCalledTimes(2));
+    expect(onAsk).toHaveBeenLastCalledWith(
+      "婚姻与伴侣怎么看？",
+      null,
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
+  it("drops the tapped topic when a pillar suggestion replaces the question", async () => {
+    const onAsk = vi.fn().mockResolvedValue(response("session-suggestion", "message-suggestion", "建议回答"));
+    render(
+      <ChatWorkspace
+        {...workspaceProps()}
+        suggestedQuestion="日主甲辰在基础结构中应该怎样理解？"
+        onAsk={onAsk}
+      />,
+    );
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.click(screen.getByRole("button", { name: "财富收入" }));
+    fireEvent.click(screen.getByRole("button", { name: "日主甲辰在基础结构中应该怎样理解？" }));
+    fireEvent.submit(textbox.closest("form")!);
+
+    await screen.findByText("建议回答");
+    expect(onAsk).toHaveBeenCalledWith(
+      "日主甲辰在基础结构中应该怎样理解？",
+      null,
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
   it("describes the expert and evidence scope without a retrieval mode", () => {
     const props = workspaceProps();
     render(<ChatWorkspace {...props} expertName="梁湘润方法 v0.1-preview" />);

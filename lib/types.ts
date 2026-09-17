@@ -211,7 +211,7 @@ export type ResearchTask = {
   chart: ChartFacts;
   school: string;
   evidence_scope: EvidenceScope;
-  mode: RetrievalMode | "lightrag";
+  mode: RetrievalMode;
   archived: boolean;
   created_at: string;
   updated_at: string;

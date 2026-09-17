@@ -449,7 +449,10 @@ export function ChatWorkspace({
                           type="button"
                           key={`${message.id}-followup-${index}`}
                           disabled={!chart || loading}
-                          onClick={() => setQuestion(followup)}
+                          onClick={() => {
+                            setQuestion(followup);
+                            setPendingTopicId(null);
+                          }}
                         >
                           <CornerDownRight size={13} aria-hidden="true" />
                           <span>{followup}</span>
@@ -496,7 +499,10 @@ export function ChatWorkspace({
           <button
             type="button"
             className="question-suggestion"
-            onClick={() => setQuestion(suggestedQuestion)}
+            onClick={() => {
+              setQuestion(suggestedQuestion);
+              setPendingTopicId(null);
+            }}
           >
             <MessageCircleQuestion size={14} aria-hidden="true" />
             <span>{suggestedQuestion}</span>
