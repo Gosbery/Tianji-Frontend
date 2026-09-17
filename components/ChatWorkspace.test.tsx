@@ -1,7 +1,25 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ChatWorkspace, FormattedAnswer } from "@/components/ChatWorkspace";
-import type { ChartFacts, ChatResponse } from "@/lib/types";
+import type { ChartFacts, ChatResponse, Evidence } from "@/lib/types";
+
+const classicHit: Evidence = {
+  id: "classic-1",
+  kind: "canonical_passage",
+  layer: 3,
+  title: "《滴天髓》· 配合",
+  quote: "配合干支，仔细推详其进退之机。",
+  source: "滴天髓",
+  score: 1.2,
+  matched_by: ["bm25"],
+  trace_refs: [],
+  review_status: "reviewed",
+  verification_level: "human_review",
+  confidence: 0.95,
+  warning: "",
+  unresolved_variants: [],
+  concepts: [],
+};
 
 const chart: ChartFacts = {
   calculated_at: "2026-09-01T00:00:00Z",
@@ -78,6 +96,7 @@ function workspaceProps() {
     suggestedQuestion: "",
     loading: false,
     onAsk: vi.fn(),
+    onVerify: vi.fn().mockResolvedValue([]),
     onFeedback: vi.fn().mockResolvedValue(undefined),
     onResponseSelect: vi.fn(),
     onCitation: vi.fn(),
@@ -301,6 +320,103 @@ describe("ChatWorkspace", () => {
 
     await waitFor(() => expect(log.scrollTop).toBe(480));
     expect(document.documentElement.scrollTop).toBe(0);
+  });
+});
+
+describe("ChatWorkspace verification", () => {
+  it("runs verification and shows classic evidence on demand", async () => {
+    const onVerify = vi.fn().mockResolvedValue([classicHit]);
+    const onAsk = vi.fn().mockResolvedValue(response("session", "message", "回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} onVerify={onVerify} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    expect(screen.queryByRole("button", { name: "查典籍" })).toBeNull();
+    fireEvent.change(textbox, { target: { value: "看下财运" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    fireEvent.click(await screen.findByRole("button", { name: "查典籍" }));
+
+    expect(await screen.findByText("典籍依据 · 1 条")).toBeDefined();
+    expect(screen.getByText(/配合干支/)).toBeDefined();
+    expect(onVerify).toHaveBeenCalledWith("session", "message");
+  });
+
+  it("shows a loading state while the classics are being searched", async () => {
+    let release: (hits: Evidence[]) => void = () => undefined;
+    const onVerify = vi.fn().mockImplementation(() => new Promise<Evidence[]>((resolve) => {
+      release = resolve;
+    }));
+    const onAsk = vi.fn().mockResolvedValue(response("session-slow", "message-slow", "回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} onVerify={onVerify} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.change(textbox, { target: { value: "看下财运" } });
+    fireEvent.submit(textbox.closest("form")!);
+    const button = await screen.findByRole("button", { name: "查典籍" });
+    fireEvent.click(button);
+
+    expect(await screen.findByText("正在检索典籍…")).toBeDefined();
+    expect(button).toHaveProperty("disabled", true);
+
+    await act(async () => { release([classicHit]); });
+
+    expect(await screen.findByText("典籍依据 · 1 条")).toBeDefined();
+    expect(screen.queryByText("正在检索典籍…")).toBeNull();
+    expect(button).toHaveProperty("disabled", false);
+  });
+
+  it("shows the failure reason when verification fails", async () => {
+    const onVerify = vi.fn().mockRejectedValue(new Error("典籍服务不可用"));
+    const onAsk = vi.fn().mockResolvedValue(response("session-error", "message-error", "回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} onVerify={onVerify} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.change(textbox, { target: { value: "看下财运" } });
+    fireEvent.submit(textbox.closest("form")!);
+    fireEvent.click(await screen.findByRole("button", { name: "查典籍" }));
+
+    expect(await screen.findByText("典籍服务不可用")).toBeDefined();
+    expect(screen.queryByText(/典籍依据 ·/)).toBeNull();
+  });
+
+  it("shows a stored verification without searching again", async () => {
+    const stored = {
+      ...response("session-history", "message-history", "历史回答"),
+      verification: { query: "财运", hits: [classicHit], latency_ms: 8 },
+    };
+    const onVerify = vi.fn().mockResolvedValue([]);
+    render(
+      <ChatWorkspace
+        {...workspaceProps()}
+        onVerify={onVerify}
+        initialMessages={[{
+          id: "message-history",
+          role: "assistant",
+          content: "历史回答",
+          turn_index: 0,
+          created_at: "2026-09-01T00:00:00Z",
+          response: stored,
+        }]}
+      />,
+    );
+
+    expect(await screen.findByText("典籍依据 · 1 条")).toBeDefined();
+    expect(onVerify).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "查典籍" })).toBeDefined();
+  });
+
+  it("labels a direct answer instead of counting retrieved evidence", async () => {
+    const onAsk = vi.fn().mockResolvedValue(response("session-direct", "message-direct", "直接解读回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.change(textbox, { target: { value: "看下财运" } });
+    fireEvent.submit(textbox.closest("form")!);
+    await screen.findByText("直接解读回答");
+
+    expect(screen.getByText("直接解读")).toBeDefined();
+    expect(screen.queryByText("1 条依据")).toBeNull();
+    expect(screen.queryByText("引用已核验")).toBeNull();
   });
 });
 

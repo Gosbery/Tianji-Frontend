@@ -45,7 +45,7 @@ export function EvidencePanel({ evidence, uncertainties, latencyMs, focusedCitat
         {evidence.length === 0 ? (
           <div className="empty-evidence">
             <Database size={20} aria-hidden="true" />
-            <span>等待一次检索</span>
+            <span>本回答为直接解读；点击回答下方「查典籍」可查看典籍依据。</span>
           </div>
         ) : (
           evidence.map((item, index) => (

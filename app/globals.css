@@ -290,56 +290,13 @@ a:focus-visible {
 }
 
 /* ============================================================
-   模式切换 —— 古玉雕版
+   预览开关 —— 玉笏
    ============================================================ */
 
-.mode-switch {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(70px, 1fr));
-  padding: 3px;
-  background:
-    linear-gradient(180deg, rgba(6, 10, 7, 0.6) 0%, rgba(28, 39, 32, 0.4) 100%);
-  border-radius: var(--radius);
-  box-shadow:
-    inset 0 1px 4px rgba(0, 0, 0, 0.55),
-    0 1px 0 rgba(236, 229, 211, 0.03);
-}
-
-.mode-switch button {
-  position: relative;
-  min-height: 32px;
-  padding: 0 14px;
-  color: var(--muted);
-  border: 0;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 0.8125rem;
-  letter-spacing: 0.06em;
-  transition: color 180ms ease, background 180ms ease, text-shadow 220ms ease;
-}
-
-.mode-switch button:hover:not(.active):not(:disabled) {
-  color: var(--ink-soft);
-}
-
-.mode-switch button.active {
-  color: var(--accent-bright);
-  background:
-    radial-gradient(ellipse 90% 80% at 50% 100%, rgba(201, 169, 97, 0.28) 0%, transparent 70%),
-    linear-gradient(180deg, rgba(201, 169, 97, 0.14) 0%, rgba(142, 112, 56, 0.06) 100%);
-  text-shadow: 0 0 10px var(--accent-glow);
-  font-weight: 700;
-}
-
-.mode-switch button:disabled,
 .preview-toggle:has(input:disabled) {
   cursor: wait;
   opacity: 0.5;
 }
-
-/* ============================================================
-   预览开关 —— 玉笏
-   ============================================================ */
 
 .preview-toggle {
   justify-self: end;
@@ -1383,6 +1340,98 @@ a:focus-visible {
   box-shadow: inset 2px 0 0 rgba(201, 169, 97, 0.72);
 }
 
+/* ============================================================
+   典籍依据 —— 按需查典的结果
+   ============================================================ */
+
+.verification-list {
+  max-width: 34rem;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--ink-soft);
+  background:
+    radial-gradient(ellipse 60% 100% at 0% 0%, rgba(90, 155, 143, 0.08) 0%, transparent 70%),
+    rgba(6, 10, 7, 0.32);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px rgba(61, 74, 66, 0.55);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.verification-heading {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+}
+
+.verification-item {
+  box-shadow: inset 0 -1px 0 rgba(42, 53, 48, 0.45);
+}
+
+.verification-item:last-child {
+  box-shadow: none;
+}
+
+.verification-item summary {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.verification-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.verification-item summary svg {
+  color: var(--muted);
+  transition: transform 200ms ease;
+}
+
+.verification-item[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.verification-title {
+  font-family: var(--font-serif);
+  letter-spacing: 0.04em;
+}
+
+.verification-item[open] summary .verification-title {
+  color: var(--accent-bright);
+}
+
+.verification-body {
+  padding: 0 0 10px;
+}
+
+.verification-body p {
+  margin: 0 0 6px;
+  color: var(--ink-soft);
+  font-family: var(--font-serif);
+}
+
+.verification-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-dim);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.verification-error {
+  color: var(--cinnabar);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
 .inline-citation {
   display: inline;
   padding: 0 2px;
@@ -1664,36 +1713,6 @@ a:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 10px;
-}
-
-.retrieval-settings select {
-  max-width: 8rem;
-  min-height: 30px;
-  padding: 0 24px 0 8px;
-  color: var(--ink-soft);
-  background:
-    linear-gradient(180deg, rgba(6, 10, 7, 0.6) 0%, rgba(19, 28, 22, 0.4) 100%);
-  border: 0;
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px rgba(61, 74, 66, 0.6);
-  transition: box-shadow 200ms ease, color 200ms ease;
-}
-
-.retrieval-settings select:hover {
-  color: var(--ink);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px var(--accent-dark);
-}
-
-.retrieval-settings select option {
-  background: var(--surface);
-  color: var(--ink);
 }
 
 .retrieval-settings > span {
@@ -2140,11 +2159,6 @@ a:focus-visible {
     min-height: 100dvh;
     display: block;
     overflow: visible;
-  }
-
-  .mode-switch {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 
   .preview-toggle > span:last-child {

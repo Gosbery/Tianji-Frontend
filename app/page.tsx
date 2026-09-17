@@ -19,6 +19,7 @@ import {
   retryTaskJob,
   sendFeedback,
   sendTaskMessage,
+  verifyMessage,
 } from "@/lib/api";
 import type {
   BirthInput,
@@ -383,6 +384,7 @@ export default function Home() {
               selectedMessageId={latest?.message_id}
               onAsk={handleAsk}
               onFeedback={(sessionId, messageId, rating, note) => sendFeedback(sessionId, messageId, rating, note)}
+              onVerify={async (sessionId, messageId) => (await verifyMessage(sessionId, messageId)).hits}
               onCancel={activeTask.active_job ? async () => {
                 await cancelTaskJob(activeTask.id, activeTask.active_job!.id);
                 await refreshActive(activeTask.id);
@@ -398,7 +400,7 @@ export default function Home() {
               }}
             />
             <EvidencePanel
-              evidence={latest?.evidence ?? []}
+              evidence={latest?.evidence.filter((item) => item.kind !== "chart_fact") ?? []}
               uncertainties={latest?.uncertainties ?? activeTask.chart.uncertainties}
               latencyMs={latest?.latency_ms}
               focusedCitation={focusedCitation}

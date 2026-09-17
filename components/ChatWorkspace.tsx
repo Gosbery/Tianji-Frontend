@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import { VerificationList } from "@/components/VerificationList";
 import { parseAnswer, type InlinePart } from "@/lib/answer-format";
 import { isAbortError } from "@/lib/api";
 import { FORTUNE_TOPICS } from "@/lib/options";
@@ -24,9 +25,16 @@ import type {
   ChartFacts,
   ChatResponse,
   ConversationMessage,
+  Evidence,
   EvidenceScope,
   GenerationJob,
 } from "@/lib/types";
+
+type Verification = {
+  loading?: boolean;
+  hits?: Evidence[];
+  error?: string;
+};
 
 type Message = {
   id: string;
@@ -35,6 +43,7 @@ type Message = {
   progress?: string[];
   streaming?: boolean;
   response?: ChatResponse;
+  verification?: Evidence[];
   feedbackRating?: -1 | 1;
   feedbackPending?: boolean;
   feedbackNote?: string;
@@ -64,6 +73,7 @@ type Props = {
     rating: -1 | 1,
     note: string,
   ) => Promise<void>;
+  onVerify: (sessionId: string, messageId: string) => Promise<Evidence[]>;
   onCancel?: () => Promise<void>;
   onRetry?: () => Promise<void>;
   onResponseSelect: (response: ChatResponse) => void;
@@ -153,6 +163,7 @@ export function ChatWorkspace({
   selectedMessageId,
   onAsk,
   onFeedback,
+  onVerify,
   onCancel,
   onRetry,
   onResponseSelect,
@@ -161,6 +172,7 @@ export function ChatWorkspace({
   const [question, setQuestion] = useState("");
   const [pendingTopicId, setPendingTopicId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(() => restoredMessages(initialMessages ?? []));
+  const [verifications, setVerifications] = useState<Record<string, Verification>>({});
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageSequence = useRef(0);
@@ -290,6 +302,20 @@ export function ChatWorkspace({
     }
   }
 
+  async function runVerification(response: ChatResponse) {
+    const key = response.message_id;
+    setVerifications((current) => ({ ...current, [key]: { loading: true } }));
+    try {
+      const hits = await onVerify(response.session_id, response.message_id);
+      setVerifications((current) => ({ ...current, [key]: { hits } }));
+    } catch (reason) {
+      setVerifications((current) => ({
+        ...current,
+        [key]: { error: reason instanceof Error ? reason.message : "核验失败" },
+      }));
+    }
+  }
+
   async function submitFeedback(message: Message, rating: -1 | 1) {
     if (!message.response || message.feedbackRating || feedbackInFlight.current.has(message.id)) {
       return;
@@ -374,19 +400,25 @@ export function ChatWorkspace({
               {message.response && (
                 <>
                   <div className="message-actions">
-                    <span>{message.response.evidence.length} 条依据</span>
-                    {message.response.citations_validated && <span>引用已核验</span>}
+                    {message.response.mode === "direct" ? (
+                      <span>直接解读</span>
+                    ) : (
+                      <>
+                        <span>{message.response.evidence.length} 条依据</span>
+                        {message.response.citations_validated && <span>引用已核验</span>}
+                      </>
+                    )}
                     {message.response.token_usage !== null && (
                       <span>{message.response.token_usage} tokens</span>
                     )}
                     <button
                       type="button"
-                      title="查看此回答的证据"
-                      aria-label="查看此回答的证据"
-                      aria-pressed={selectedMessageId === message.response.message_id}
+                      title="查典籍"
+                      aria-label="查典籍"
+                      disabled={Boolean(verifications[message.response.message_id]?.loading)}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onResponseSelect(message.response!);
+                        void runVerification(message.response!);
                       }}
                     >
                       <BookOpen size={14} aria-hidden="true" />
@@ -426,6 +458,13 @@ export function ChatWorkspace({
                       <ThumbsDown size={14} aria-hidden="true" />
                     </button>
                   </div>
+                  {(verifications[message.response.message_id] || message.verification) && (
+                    <VerificationList
+                      hits={verifications[message.response.message_id]?.hits ?? message.verification ?? []}
+                      loading={verifications[message.response.message_id]?.loading}
+                      error={verifications[message.response.message_id]?.error}
+                    />
+                  )}
                   {message.feedbackNoteOpen && !message.feedbackRating && (
                     <label className="feedback-note">
                       <span className="sr-only">反馈说明（可选）</span>
@@ -579,5 +618,6 @@ function restoredMessages(messages: ConversationMessage[]): Message[] {
     role: message.role,
     content: message.content,
     response: message.response ?? undefined,
+    verification: message.response?.verification?.hits ?? undefined,
   }));
 }
