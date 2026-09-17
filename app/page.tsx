@@ -20,7 +20,6 @@ import {
   sendFeedback,
   sendTaskMessage,
 } from "@/lib/api";
-import { RETRIEVAL_MODE_OPTIONS } from "@/lib/options";
 import type {
   BirthInput,
   ChartFacts,
@@ -31,7 +30,6 @@ import type {
   Pillar,
   ResearchTask,
   ResearchTaskDetail,
-  RetrievalMode,
   TaskEvent,
 } from "@/lib/types";
 
@@ -84,7 +82,6 @@ export default function Home() {
   const [draftChart, setDraftChart] = useState<ChartFacts | null>(null);
   const [draftStale, setDraftStale] = useState(false);
   const [selectedExpertId, setSelectedExpertId] = useState("liang-xiangrun");
-  const [mode, setMode] = useState<RetrievalMode>("hybrid_rerank");
   const [evidenceScope, setEvidenceScope] = useState<EvidenceScope>("personal_preview");
   const [activePillar, setActivePillar] = useState<Pillar | null>(null);
   const [suggestedQuestion, setSuggestedQuestion] = useState("");
@@ -210,7 +207,12 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const created = await createTask({ birth, expertId: selectedExpertId, evidenceScope, mode });
+      const created = await createTask({
+        birth,
+        expertId: selectedExpertId,
+        evidenceScope,
+        mode: "direct",
+      });
       await refreshTasks();
       setActiveTask(created);
       activeTaskIdRef.current = created.id;
@@ -224,10 +226,10 @@ export default function Home() {
     }
   }
 
-  async function handleAsk(question: string): Promise<ChatResponse> {
+  async function handleAsk(question: string, topicId: string | null): Promise<ChatResponse> {
     if (!activeTask) throw new Error("请先创建任务");
     const taskId = activeTask.id;
-    const job = await sendTaskMessage(taskId, question);
+    const job = await sendTaskMessage(taskId, question, topicId);
     if (activeTaskIdRef.current === taskId) {
       setActiveTask((current) => current ? { ...current, active_job: job } : current);
     }
@@ -278,18 +280,6 @@ export default function Home() {
         <div className="brand">
           <span className="brand-mark"><Sparkles size={18} aria-hidden="true" /></span>
           <div><h1>命盘显微镜</h1><span>多专家命理任务</span></div>
-        </div>
-        <div className="mode-switch" role="group" aria-label="检索模式">
-          {RETRIEVAL_MODE_OPTIONS.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              className={mode === option.value ? "active" : ""}
-              disabled={!creating || loading}
-              onClick={() => setMode(option.value)}
-              aria-pressed={mode === option.value}
-            >{option.label}</button>
-          ))}
         </div>
         <label className={`preview-toggle ${evidenceScope === "personal_preview" ? "active" : ""}`}>
           <input
@@ -384,7 +374,6 @@ export default function Home() {
               key={activeTask.id}
               chart={activeTask.archived ? null : activeTask.chart}
               blockedReason={activeTask.archived ? "归档任务需恢复后才能继续提问" : undefined}
-              mode={activeTask.mode === "lightrag" ? "hybrid_rerank" : activeTask.mode}
               evidenceScope={activeTask.evidence_scope}
               expertName={`${activeTask.expert_name} v${activeTask.expert_version}`}
               activeJob={activeTask.active_job}

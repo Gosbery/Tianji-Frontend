@@ -3,6 +3,7 @@ import type {
   ChartFacts,
   ChatResponse,
   ConversationHistory,
+  Evidence,
   EvidenceScope,
   KnowledgeOverview,
   KnowledgeSchool,
@@ -286,11 +287,27 @@ export function restoreTask(taskId: string) {
   });
 }
 
-export function sendTaskMessage(taskId: string, question: string) {
+export function sendTaskMessage(
+  taskId: string,
+  question: string,
+  topicId?: string | null,
+) {
   return request<GenerationJob>(`/api/v1/tasks/${encodeURIComponent(taskId)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, topic_id: topicId ?? undefined }),
   });
+}
+
+export function verifyMessage(
+  sessionId: string,
+  messageId: string,
+  focus?: string,
+  signal?: AbortSignal,
+) {
+  return request<{ message_id: string; query: string; hits: Evidence[] }>(
+    `/api/v1/conversations/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/verification`,
+    { method: "POST", body: JSON.stringify({ focus: focus ?? undefined }), signal },
+  );
 }
 
 export function cancelTaskJob(taskId: string, jobId: string) {

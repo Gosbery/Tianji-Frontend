@@ -62,7 +62,7 @@ function response(sessionId: string, messageId: string, answer: string): ChatRes
     }],
     uncertainties: [],
     followups: [],
-    mode: "hybrid_rerank",
+    mode: "direct",
     latency_ms: 12,
     token_usage: 42,
     policy_decision: "allow",
@@ -74,15 +74,11 @@ function response(sessionId: string, messageId: string, answer: string): ChatRes
 function workspaceProps() {
   return {
     chart,
-    mode: "hybrid_rerank" as const,
-    school: "基础共识" as const,
     evidenceScope: "reviewed_only" as const,
     suggestedQuestion: "",
     loading: false,
     onAsk: vi.fn(),
     onFeedback: vi.fn().mockResolvedValue(undefined),
-    onSchoolChange: vi.fn(),
-    availableSchools: ["基础共识" as const],
     onResponseSelect: vi.fn(),
     onCitation: vi.fn(),
   };
@@ -93,6 +89,7 @@ describe("ChatWorkspace", () => {
     const streamedResponse = response("session", "message", "最终回答");
     const onAsk = vi.fn().mockImplementation(async (
       _question: string,
+      _topicId: string | null,
       onChunk?: (content: string) => void,
       onProgress?: (message: string) => void,
     ) => {
@@ -136,6 +133,68 @@ describe("ChatWorkspace", () => {
       expect.stringContaining("父母与原生家庭"),
     );
     expect(onAsk).not.toHaveBeenCalled();
+  });
+
+  it("submits the topic id of the tapped card together with the question", async () => {
+    const onAsk = vi.fn().mockResolvedValue(response("session-topic", "message-topic", "财富回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "财富收入" }));
+    fireEvent.submit(screen.getByRole("textbox", { name: "问题" }).closest("form")!);
+
+    await screen.findByText("财富回答");
+    expect(onAsk).toHaveBeenCalledWith(
+      expect.stringContaining("财运"),
+      "topic:wealth",
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
+  it("sends a null topic id for a free-form question", async () => {
+    const onAsk = vi.fn().mockResolvedValue(response("session-free", "message-free", "自由回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.change(textbox, { target: { value: "我想问点别的" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await screen.findByText("自由回答");
+    expect(onAsk).toHaveBeenCalledWith(
+      "我想问点别的",
+      null,
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
+  it("clears the tapped topic so the next question is free-form again", async () => {
+    const onAsk = vi.fn().mockResolvedValue(response("session-clear", "message-clear", "第一次回答"));
+    render(<ChatWorkspace {...workspaceProps()} onAsk={onAsk} />);
+    const textbox = screen.getByRole("textbox", { name: "问题" });
+
+    fireEvent.click(screen.getByRole("button", { name: "财富收入" }));
+    fireEvent.submit(textbox.closest("form")!);
+    await screen.findByText("第一次回答");
+    fireEvent.change(textbox, { target: { value: "再问一句" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(onAsk).toHaveBeenCalledTimes(2));
+    expect(onAsk).toHaveBeenLastCalledWith(
+      "再问一句",
+      null,
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
+  it("describes the expert and evidence scope without a retrieval mode", () => {
+    const props = workspaceProps();
+    render(<ChatWorkspace {...props} expertName="梁湘润方法 v0.1-preview" />);
+
+    expect(screen.getByText(/梁湘润方法 v0\.1-preview · 仅人工审核/)).toBeDefined();
+    expect(screen.queryByText(/混合检索/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rerank" })).toBeNull();
   });
 
   it("offers the main topics users expect from a complete reading", () => {

@@ -125,6 +125,12 @@ export type Evidence = {
   concepts: string[];
 };
 
+export type VerificationResult = {
+  query: string;
+  hits: Evidence[];
+  latency_ms: number;
+};
+
 export type ChatResponse = {
   session_id: string;
   message_id: string;
@@ -138,6 +144,7 @@ export type ChatResponse = {
   policy_decision: string;
   citations_validated: boolean;
   degradation_reason: string;
+  verification?: VerificationResult | null;
 };
 
 export type ConversationMessage = {
@@ -181,6 +188,7 @@ export type GenerationJob = {
   id: string;
   task_id: string;
   question: string;
+  topic_id?: string | null;
   status: JobStatus;
   progress: string;
   error: string;
@@ -232,7 +240,7 @@ export type KnowledgeOverview = {
   schools: Record<string, { reviewed: number; machine_verified: number }>;
 };
 
-export type RetrievalMode = "dense" | "hybrid" | "hybrid_rerank";
+export type RetrievalMode = "direct";
 export type EvidenceScope = "reviewed_only" | "personal_preview";
 export const KNOWLEDGE_SCHOOLS = [
   "基础共识",

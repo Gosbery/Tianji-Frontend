@@ -19,14 +19,13 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { parseAnswer, type InlinePart } from "@/lib/answer-format";
 import { isAbortError } from "@/lib/api";
-import { FORTUNE_TOPICS, retrievalModeDescription } from "@/lib/options";
+import { FORTUNE_TOPICS } from "@/lib/options";
 import type {
   ChartFacts,
   ChatResponse,
   ConversationMessage,
   EvidenceScope,
   GenerationJob,
-  RetrievalMode,
 } from "@/lib/types";
 
 type Message = {
@@ -46,7 +45,6 @@ type Message = {
 type Props = {
   chart: ChartFacts | null;
   blockedReason?: string;
-  mode: RetrievalMode;
   evidenceScope: EvidenceScope;
   suggestedQuestion: string;
   loading: boolean;
@@ -56,6 +54,7 @@ type Props = {
   selectedMessageId?: string;
   onAsk: (
     question: string,
+    topicId: string | null,
     onChunk?: (content: string) => void,
     onProgress?: (message: string) => void,
   ) => Promise<ChatResponse>;
@@ -145,7 +144,6 @@ export function FormattedAnswer({
 export function ChatWorkspace({
   chart,
   blockedReason,
-  mode,
   evidenceScope,
   suggestedQuestion,
   loading,
@@ -161,6 +159,7 @@ export function ChatWorkspace({
   onCitation,
 }: Props) {
   const [question, setQuestion] = useState("");
+  const [pendingTopicId, setPendingTopicId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(() => restoredMessages(initialMessages ?? []));
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -201,6 +200,8 @@ export function ChatWorkspace({
     const value = question.trim();
     if (!value || !chart || loading) return;
     const userMessageId = nextMessageId("user");
+    const topicId = pendingTopicId;
+    setPendingTopicId(null);
     setQuestion("");
     setMessages((current) => [
       ...current,
@@ -244,7 +245,7 @@ export function ChatWorkspace({
         : message));
     };
     try {
-      const response = await onAsk(value, onChunk, onProgress);
+      const response = await onAsk(value, topicId, onChunk, onProgress);
       setMessages((current) => {
         if (streamingAssistantId) {
           return current.map((message) => message.id === streamingAssistantId
@@ -515,6 +516,7 @@ export function ChatWorkspace({
                 title={topic.question}
                 onClick={() => {
                   setQuestion(topic.question);
+                  setPendingTopicId(topic.topicId);
                   textareaRef.current?.focus();
                 }}
               >
@@ -544,8 +546,7 @@ export function ChatWorkspace({
           <div className="retrieval-settings">
             <span>
               {expertName ? `${expertName} · ` : ""}
-              {retrievalModeDescription(mode)}
-              {evidenceScope === "personal_preview" ? " · 含机器校勘" : " · 仅人工审核"}
+              {evidenceScope === "personal_preview" ? "含机器校勘" : "仅人工审核"}
             </span>
           </div>
           <button

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiErrorMessage, askQuestion, calculateChart, sendFeedback } from "@/lib/api";
+import {
+  apiErrorMessage,
+  askQuestion,
+  calculateChart,
+  sendFeedback,
+  sendTaskMessage,
+  verifyMessage,
+} from "@/lib/api";
 
 const birth = {
   date: "1990-01-01",
@@ -57,7 +64,7 @@ describe("request behavior", () => {
       evidence: [],
       uncertainties: [],
       followups: [],
-      mode: "hybrid_rerank",
+      mode: "direct",
       latency_ms: 10,
       token_usage: null,
       policy_decision: "allow",
@@ -87,7 +94,7 @@ describe("request behavior", () => {
     await expect(askQuestion({
       chart: {} as never,
       question: "测试问题",
-      mode: "hybrid_rerank",
+      mode: "direct",
       evidenceScope: "reviewed_only",
       school: "基础共识",
       onChunk: (chunk) => chunks.push(chunk),
@@ -143,6 +150,76 @@ describe("request behavior", () => {
     });
   });
 
+  it("sends the tapped topic id with a task message", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "job-1" }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTaskMessage("task-1", "我的财运如何？", "topic:wealth");
+
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/v1/tasks/task-1/messages");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      question: "我的财运如何？",
+      topic_id: "topic:wealth",
+    });
+  });
+
+  it("omits topic_id for free-form questions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "job-2" }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTaskMessage("task-1", "随便问问");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ question: "随便问问" });
+  });
+
+  it("treats an explicit null topic id as a free-form question", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "job-3" }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTaskMessage("task-1", "随便问问", null);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)) as Record<string, unknown>).not.toHaveProperty("topic_id");
+  });
+
+  it("posts a verification request for an existing answer", async () => {
+    const payload = { message_id: "message-1", query: "日主身强", hits: [] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(verifyMessage("session-1", "message-1", "日主身强")).resolves.toEqual(payload);
+
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/v1/conversations/session-1/messages/message-1/verification");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ focus: "日主身强" });
+  });
+
+  it("omits the verification focus when none is given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message_id: "message-1",
+      query: "",
+      hits: [],
+    }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await verifyMessage("session-1", "message-1");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)) as Record<string, unknown>).not.toHaveProperty("focus");
+  });
+
   it("preserves the backend error code for session recovery", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       detail: "上下文不一致",
@@ -156,7 +233,7 @@ describe("request behavior", () => {
       chart: {} as never,
       question: "继续追问",
       sessionId: "old-session",
-      mode: "hybrid",
+      mode: "direct",
       evidenceScope: "reviewed_only",
       school: "基础共识",
     });

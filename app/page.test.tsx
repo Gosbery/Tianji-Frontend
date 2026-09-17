@@ -10,8 +10,9 @@ import {
   listTasks,
   renameTask,
   restoreTask,
+  sendTaskMessage,
 } from "@/lib/api";
-import type { ChartFacts, ResearchTaskDetail } from "@/lib/types";
+import type { ChartFacts, GenerationJob, ResearchTaskDetail } from "@/lib/types";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -83,7 +84,7 @@ function task(id: string, name: string, archived = false): ResearchTaskDetail {
     chart: { ...chart, birth: { ...chart.birth, name } },
     school: "子平格局法",
     evidence_scope: "personal_preview",
-    mode: "hybrid_rerank",
+    mode: "direct",
     archived,
     created_at: "2026-09-04T00:00:00Z",
     updated_at: "2026-09-04T00:00:00Z",
@@ -132,6 +133,7 @@ beforeEach(() => {
   vi.mocked(renameTask).mockReset();
   vi.mocked(archiveTask).mockReset();
   vi.mocked(restoreTask).mockReset();
+  vi.mocked(sendTaskMessage).mockReset();
 });
 
 describe("multi-expert task workspace", () => {
@@ -156,9 +158,56 @@ describe("multi-expert task workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
 
     await screen.findByText("测试 · 梁湘润方法");
-    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ expertId: "liang-xiangrun" }));
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({
+      expertId: "liang-xiangrun",
+      mode: "direct",
+    }));
     expect(screen.queryByRole("button", { name: "预览命盘" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "知识流派" })).toBeNull();
+  });
+
+  it("no longer renders a retrieval mode selector", async () => {
+    render(<Home />);
+
+    await screen.findByRole("heading", { name: "选择分析方法" });
+    expect(screen.queryByRole("group", { name: "检索模式" })).toBeNull();
+    for (const label of ["Dense", "Hybrid", "Rerank"]) {
+      expect(screen.queryByRole("button", { name: label })).toBeNull();
+    }
+  });
+
+  it("forwards the tapped topic id to the task message endpoint", async () => {
+    const existing = task("task-one", "测试");
+    const failedJob: GenerationJob = {
+      id: "job-1",
+      task_id: existing.id,
+      question: "请分析我的财运",
+      status: "failed",
+      progress: "",
+      error: "生成失败",
+      assistant_message_id: "",
+      attempt_count: 1,
+      recovery_count: 0,
+      created_at: "2026-09-04T00:00:00Z",
+      started_at: null,
+      finished_at: null,
+      updated_at: "2026-09-04T00:00:00Z",
+    };
+    vi.mocked(listTasks).mockResolvedValue({ tasks: [existing] });
+    vi.mocked(getTask).mockResolvedValue({ ...existing, active_job: failedJob });
+    vi.mocked(sendTaskMessage).mockResolvedValue(failedJob);
+    render(<Home />);
+
+    await screen.findByText(existing.title);
+    fireEvent.click(screen.getByRole("button", { name: "财富收入" }));
+    fireEvent.submit(screen.getByRole("textbox", { name: "问题" }).closest("form")!);
+
+    await waitFor(() => expect(sendTaskMessage).toHaveBeenCalledWith(
+      existing.id,
+      expect.stringContaining("财运"),
+      "topic:wealth",
+    ));
+    await screen.findAllByText("生成失败");
   });
 
   it("restores the latest task and switches without modifying either chart", async () => {
